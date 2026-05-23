@@ -1,0 +1,87 @@
+{
+  "enabled": {
+    "description": "启用 Obscura 浏览搜索插件",
+    "type": "bool",
+    "default": true
+  },
+  "enable_llm_tool": {
+    "description": "注册 obscura_web_search LLM Tool，让支持工具调用的模型自主搜索",
+    "type": "bool",
+    "default": true
+  },
+  "obscura_path": {
+    "description": "Obscura 可执行文件路径",
+    "type": "string",
+    "default": "",
+    "hint": "为空时会优先使用插件目录下的 obscura-x86_64-windows/obscura.exe，再查找系统 PATH。"
+  },
+  "summary_provider_id": {
+    "description": "强制搜索结果摘要使用的模型提供商",
+    "type": "string",
+    "default": "",
+    "_special": "select_provider",
+    "hint": "为空时使用当前会话默认聊天模型。"
+  },
+  "search_engine": {
+    "description": "搜索引擎类型",
+    "type": "string",
+    "default": "duckduckgo_html",
+    "options": ["duckduckgo_html", "custom"]
+  },
+  "search_url_template": {
+    "description": "搜索 URL 模板",
+    "type": "string",
+    "default": "https://html.duckduckgo.com/html/?q={query}",
+    "hint": "支持 {query} 或 {query_encoded} 作为 URL 编码后的关键词，{raw_query} 作为原始关键词。"
+  },
+  "result_count": {
+    "description": "最多解析多少条搜索结果",
+    "type": "int",
+    "default": 5
+  },
+  "fetch_top_pages": {
+    "description": "抓取前多少条结果页正文",
+    "type": "int",
+    "default": 3
+  },
+  "timeout_seconds": {
+    "description": "Obscura 单次抓取超时时间（秒）",
+    "type": "int",
+    "default": 20
+  },
+  "max_page_chars": {
+    "description": "每个结果页最多保留的正文字符数",
+    "type": "int",
+    "default": 4000
+  },
+  "force_prefixes": {
+    "description": "非斜杠强制搜索前缀",
+    "type": "list",
+    "default": ["搜索", "search"],
+    "items": {
+      "type": "string"
+    }
+  },
+  "proxy": {
+    "description": "Obscura 代理地址",
+    "type": "string",
+    "default": "",
+    "hint": "例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080。"
+  },
+  "user_agent": {
+    "description": "自定义 User-Agent",
+    "type": "string",
+    "default": ""
+  },
+  "stealth": {
+    "description": "启用 Obscura stealth 模式",
+    "type": "bool",
+    "default": false
+  },
+  "allow_private_urls": {
+    "description": "允许访问 localhost、私网 IP、保留 IP",
+    "type": "bool",
+    "default": false,
+    "hint": "默认关闭，避免用户消息诱导浏览器读取本机或内网资源。"
+  }
+}

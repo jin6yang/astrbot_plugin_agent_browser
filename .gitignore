@@ -216,3 +216,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Customer
+docs_dev/
+obscura-source-code/
+obscura-x86_64-windows/
+
+# IDE
+.vs/
+.idea/
