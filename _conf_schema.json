@@ -5,9 +5,10 @@
     "default": true
   },
   "enable_llm_tool": {
-    "description": "注册 obscura_web_search LLM Tool，让支持工具调用的模型自主搜索",
+    "description": "注册为 obscura_web_search LLM Tool",
     "type": "bool",
-    "default": true
+    "default": true,
+    "hint": "为支持工具调用的模型提供自主搜索的能力"
   },
   "obscura_path": {
     "description": "Obscura 可执行文件路径",
@@ -55,7 +56,7 @@
     "default": 4000
   },
   "force_prefixes": {
-    "description": "非斜杠强制搜索前缀",
+    "description": "强制搜索触发词（非内部指令）",
     "type": "list",
     "default": ["搜索", "search"],
     "items": {
