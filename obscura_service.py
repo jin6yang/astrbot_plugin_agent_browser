@@ -10,11 +10,29 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Mapping, Sequence
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
 
 DEFAULT_SEARCH_URL_TEMPLATE = "https://html.duckduckgo.com/html/?q={query}"
 DEFAULT_FORCE_PREFIXES = ["搜索", "search"]
+DEFAULT_SUMMARY_PROMPT_FILE = "prompts/summary.md"
+DEFAULT_SUMMARY_PROMPT_TEMPLATE = """你是一个严谨的联网搜索助手。请基于下面的 Obscura 浏览器搜索材料回答用户问题。
+
+要求：
+1. 优先使用搜索材料，不要把没有依据的内容说成事实。
+2. 结论后用 [1]、[2] 这样的编号标注来源。
+3. 如果材料不足，请明确说明不足，并给出已找到的信息。
+4. 如果材料包含图片或设计线索，请区分“页面文字/DOM 元数据能确认的内容”和“无法直接确认的视觉细节”。
+5. 用用户提问的语言回答，保持简洁但覆盖关键事实。
+
+总结侧重点：{summary_focus}
+
+用户问题：
+{query}
+
+搜索材料：
+{evidence}
+"""
 
 
 class ObscuraError(RuntimeError):
@@ -24,9 +42,19 @@ class ObscuraError(RuntimeError):
 @dataclass(slots=True)
 class SearchConfig:
     enabled: bool = True
+    enable_force_commands: bool = True
+    enable_force_prefixes: bool = True
     enable_llm_tool: bool = True
     obscura_path: str = ""
     summary_provider_id: str = ""
+    summary_prompt_template: str = DEFAULT_SUMMARY_PROMPT_TEMPLATE
+    summary_prompt_file: str = DEFAULT_SUMMARY_PROMPT_FILE
+    auto_search_policy: str = "tool"
+    summary_focus: str = "auto"
+    media_extract_mode: str = "metadata_only"
+    max_images_per_page: int = 5
+    enable_image_caption: bool = False
+    image_caption_provider_id: str = ""
     search_engine: str = "duckduckgo_html"
     search_url_template: str = DEFAULT_SEARCH_URL_TEMPLATE
     result_count: int = 5
@@ -41,12 +69,96 @@ class SearchConfig:
 
 
 @dataclass(slots=True)
+class MediaItem:
+    url: str
+    source: str = ""
+    alt: str = ""
+    title: str = ""
+    caption: str = ""
+    visual_description: str = ""
+    error: str = ""
+
+
+@dataclass(slots=True)
+class PageEvidence:
+    title: str = ""
+    description: str = ""
+    og_title: str = ""
+    og_description: str = ""
+    headings: list[str] = field(default_factory=list)
+    nav_items: list[str] = field(default_factory=list)
+    links: list[str] = field(default_factory=list)
+    colors: list[str] = field(default_factory=list)
+    fonts: list[str] = field(default_factory=list)
+    media: list[MediaItem] = field(default_factory=list)
+
+    def has_content(self) -> bool:
+        return bool(
+            self.title
+            or self.description
+            or self.og_title
+            or self.og_description
+            or self.headings
+            or self.nav_items
+            or self.links
+            or self.colors
+            or self.fonts
+            or self.media
+        )
+
+    def to_markdown_lines(self) -> list[str]:
+        lines: list[str] = []
+        if self.title:
+            lines.append(f"- Page title: {self.title}")
+        if self.description:
+            lines.append(f"- Meta description: {self.description}")
+        if self.og_title:
+            lines.append(f"- OpenGraph title: {self.og_title}")
+        if self.og_description:
+            lines.append(f"- OpenGraph description: {self.og_description}")
+        if self.headings:
+            lines.append("- Headings: " + "; ".join(self.headings[:8]))
+        if self.nav_items:
+            lines.append("- Navigation labels: " + "; ".join(self.nav_items[:10]))
+        if self.links:
+            lines.append("- Main links: " + "; ".join(self.links[:10]))
+        if self.colors:
+            lines.append("- CSS color tokens: " + ", ".join(self.colors[:12]))
+        if self.fonts:
+            lines.append("- CSS font tokens: " + ", ".join(self.fonts[:8]))
+        if self.media:
+            lines.append("- Media evidence:")
+            for index, media in enumerate(self.media[:10], start=1):
+                detail = [f"image {index}: {media.url}"]
+                if media.source:
+                    detail.append(f"source={media.source}")
+                if media.alt:
+                    detail.append(f"alt={media.alt}")
+                if media.title:
+                    detail.append(f"title={media.title}")
+                if media.caption:
+                    detail.append(f"caption={media.caption}")
+                if media.visual_description:
+                    detail.append(f"visual_caption={media.visual_description}")
+                if media.error:
+                    detail.append(f"caption_error={media.error}")
+                lines.append("  - " + " | ".join(detail))
+            if any(not item.visual_description for item in self.media):
+                lines.append(
+                    "  - Note: image pixels without visual_caption were not analyzed; "
+                    "only URL, alt/title text, captions, and page metadata are available."
+                )
+        return lines
+
+
+@dataclass(slots=True)
 class SearchResult:
     title: str
     url: str
     snippet: str = ""
     content: str = ""
     error: str = ""
+    page: PageEvidence = field(default_factory=PageEvidence)
 
 
 @dataclass(slots=True)
@@ -70,6 +182,11 @@ class SearchResponse:
             lines.append(f"URL: {result.url}")
             if result.snippet:
                 lines.append(f"Snippet: {result.snippet}")
+            if include_content and result.page.has_content():
+                page_lines = result.page.to_markdown_lines()
+                if page_lines:
+                    lines.append("Page evidence:")
+                    lines.extend(page_lines)
             if include_content and result.content:
                 lines.append("Content excerpt:")
                 lines.append(result.content)
@@ -87,9 +204,19 @@ def config_from_mapping(config: Mapping[str, Any] | None) -> SearchConfig:
 
     return SearchConfig(
         enabled=_as_bool(raw.get("enabled", True)),
+        enable_force_commands=_as_bool(raw.get("enable_force_commands", True)),
+        enable_force_prefixes=_as_bool(raw.get("enable_force_prefixes", True)),
         enable_llm_tool=_as_bool(raw.get("enable_llm_tool", True)),
         obscura_path=str(raw.get("obscura_path", "") or "").strip(),
         summary_provider_id=str(raw.get("summary_provider_id", "") or "").strip(),
+        summary_prompt_template=str(raw.get("summary_prompt_template", DEFAULT_SUMMARY_PROMPT_TEMPLATE) or DEFAULT_SUMMARY_PROMPT_TEMPLATE),
+        summary_prompt_file=str(raw.get("summary_prompt_file", DEFAULT_SUMMARY_PROMPT_FILE) or DEFAULT_SUMMARY_PROMPT_FILE).strip(),
+        auto_search_policy=_choice(raw.get("auto_search_policy", "tool"), {"tool", "always"}, "tool"),
+        summary_focus=_choice(raw.get("summary_focus", "auto"), {"auto", "content", "visual_design", "site_overview"}, "auto"),
+        media_extract_mode=_choice(raw.get("media_extract_mode", "metadata_only"), {"off", "metadata_only", "images"}, "metadata_only"),
+        max_images_per_page=max(0, _as_int(raw.get("max_images_per_page", 5), 5)),
+        enable_image_caption=_as_bool(raw.get("enable_image_caption", False)),
+        image_caption_provider_id=str(raw.get("image_caption_provider_id", "") or "").strip(),
         search_engine=str(raw.get("search_engine", "duckduckgo_html") or "duckduckgo_html").strip(),
         search_url_template=str(raw.get("search_url_template", DEFAULT_SEARCH_URL_TEMPLATE) or DEFAULT_SEARCH_URL_TEMPLATE).strip(),
         result_count=max(1, _as_int(raw.get("result_count", 5), 5)),
@@ -117,6 +244,36 @@ def _as_int(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _choice(value: Any, allowed: set[str], default: str) -> str:
+    candidate = str(value or default).strip()
+    return candidate if candidate in allowed else default
+
+
+def resolve_summary_prompt_template(config: SearchConfig, *, base_dir: str | Path | None = None) -> str:
+    root = Path(base_dir) if base_dir is not None else Path(__file__).resolve().parent
+    candidates: list[tuple[str, str]] = []
+    if config.summary_prompt_file:
+        prompt_path = Path(os.path.expandvars(os.path.expanduser(config.summary_prompt_file)))
+        if not prompt_path.is_absolute():
+            prompt_path = root / prompt_path
+        if prompt_path.is_file():
+            try:
+                candidates.append(("file", prompt_path.read_text(encoding="utf-8")))
+            except OSError:
+                pass
+    candidates.append(("config", config.summary_prompt_template))
+    candidates.append(("default", DEFAULT_SUMMARY_PROMPT_TEMPLATE))
+
+    for _, template in candidates:
+        if is_valid_summary_prompt_template(template):
+            return template
+    return DEFAULT_SUMMARY_PROMPT_TEMPLATE
+
+
+def is_valid_summary_prompt_template(template: str) -> bool:
+    return "{query}" in template and "{evidence}" in template
 
 
 def resolve_obscura_path(configured_path: str = "", *, base_dir: str | Path | None = None) -> str | None:
@@ -321,6 +478,232 @@ def parse_duckduckgo_results(html_text: str, *, limit: int, allow_private_urls: 
     return results
 
 
+class PageEvidenceParser(HTMLParser):
+    def __init__(self, base_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.base_url = base_url
+        self.evidence = PageEvidence()
+        self._capture_title = False
+        self._capture_heading: str | None = None
+        self._capture_nav_link = False
+        self._capture_regular_link = False
+        self._capture_style = False
+        self._capture_figcaption = False
+        self._text_chunks: list[str] = []
+        self._nav_depth = 0
+        self._figure_media_indexes: list[int] | None = None
+        self._figcaption_chunks: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_map = {key.lower(): value or "" for key, value in attrs}
+        self._collect_style_tokens(attrs_map.get("style", ""))
+
+        if tag == "title":
+            self._capture_title = True
+            self._text_chunks = []
+            return
+
+        if tag in {"h1", "h2", "h3"}:
+            self._capture_heading = tag
+            self._text_chunks = []
+            return
+
+        if tag == "nav":
+            self._nav_depth += 1
+
+        if tag == "figure":
+            self._figure_media_indexes = []
+
+        if tag == "figcaption":
+            self._capture_figcaption = True
+            self._figcaption_chunks = []
+
+        if tag == "style":
+            self._capture_style = True
+            self._text_chunks = []
+            return
+
+        if tag == "meta":
+            self._handle_meta(attrs_map)
+            return
+
+        if tag in {"img", "source"}:
+            self._handle_media_tag(tag, attrs_map)
+            return
+
+        if tag == "a":
+            if self._nav_depth:
+                self._capture_nav_link = True
+            else:
+                self._capture_regular_link = True
+            self._text_chunks = []
+
+    def handle_data(self, data: str) -> None:
+        if (
+            self._capture_title
+            or self._capture_heading
+            or self._capture_nav_link
+            or self._capture_regular_link
+            or self._capture_style
+        ):
+            self._text_chunks.append(data)
+        if self._capture_figcaption:
+            self._figcaption_chunks.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "title" and self._capture_title:
+            self.evidence.title = clean_text("".join(self._text_chunks))[:300]
+            self._capture_title = False
+            self._text_chunks = []
+            return
+
+        if tag in {"h1", "h2", "h3"} and self._capture_heading == tag:
+            self._append_unique(self.evidence.headings, clean_text("".join(self._text_chunks)), limit=16)
+            self._capture_heading = None
+            self._text_chunks = []
+            return
+
+        if tag == "a" and self._capture_nav_link:
+            self._append_unique(self.evidence.nav_items, clean_text("".join(self._text_chunks)), limit=24)
+            self._capture_nav_link = False
+            self._text_chunks = []
+            return
+
+        if tag == "a" and self._capture_regular_link:
+            self._append_unique(self.evidence.links, clean_text("".join(self._text_chunks)), limit=24)
+            self._capture_regular_link = False
+            self._text_chunks = []
+            return
+
+        if tag == "style" and self._capture_style:
+            self._collect_style_tokens("".join(self._text_chunks))
+            self._capture_style = False
+            self._text_chunks = []
+            return
+
+        if tag == "figcaption" and self._capture_figcaption:
+            caption = clean_text("".join(self._figcaption_chunks))
+            if caption:
+                for media_index in self._figure_media_indexes or []:
+                    if media_index < len(self.evidence.media) and not self.evidence.media[media_index].caption:
+                        self.evidence.media[media_index].caption = caption[:300]
+            self._capture_figcaption = False
+            self._figcaption_chunks = []
+            return
+
+        if tag == "nav" and self._nav_depth:
+            self._nav_depth -= 1
+
+        if tag == "figure":
+            self._figure_media_indexes = None
+
+    def _handle_meta(self, attrs_map: Mapping[str, str]) -> None:
+        key = (attrs_map.get("property") or attrs_map.get("name") or "").strip().lower()
+        content = clean_text(attrs_map.get("content", ""))
+        if not key or not content:
+            return
+
+        if key == "description":
+            self.evidence.description = content[:500]
+        elif key in {"og:title", "twitter:title"}:
+            self.evidence.og_title = content[:300]
+        elif key in {"og:description", "twitter:description"}:
+            self.evidence.og_description = content[:500]
+        elif key in {"og:image", "og:image:secure_url", "twitter:image", "twitter:image:src"}:
+            self._add_media(content, source=key)
+
+    def _handle_media_tag(self, tag: str, attrs_map: Mapping[str, str]) -> None:
+        alt = clean_text(attrs_map.get("alt", ""))
+        title = clean_text(attrs_map.get("title", ""))
+        source = "img" if tag == "img" else "source"
+        candidates: list[str] = []
+        if attrs_map.get("src"):
+            candidates.append(attrs_map["src"])
+        if attrs_map.get("data-src"):
+            candidates.append(attrs_map["data-src"])
+        if attrs_map.get("srcset"):
+            candidates.extend(parse_srcset(attrs_map["srcset"]))
+        if attrs_map.get("data-srcset"):
+            candidates.extend(parse_srcset(attrs_map["data-srcset"]))
+        for candidate in candidates:
+            self._add_media(candidate, source=source, alt=alt, title=title)
+
+    def _add_media(self, url: str, *, source: str, alt: str = "", title: str = "") -> None:
+        resolved = resolve_page_url(self.base_url, url)
+        if not resolved:
+            return
+        if any(item.url == resolved for item in self.evidence.media):
+            return
+        self.evidence.media.append(
+            MediaItem(
+                url=resolved,
+                source=source,
+                alt=alt[:300],
+                title=title[:300],
+            )
+        )
+        if self._figure_media_indexes is not None:
+            self._figure_media_indexes.append(len(self.evidence.media) - 1)
+
+    def _collect_style_tokens(self, css: str) -> None:
+        if not css:
+            return
+        for color in re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\([^)]+\)|hsla?\([^)]+\)", css):
+            self._append_unique(self.evidence.colors, clean_text(color), limit=24)
+        for font in re.findall(r"font-family\s*:\s*([^;}{]+)", css, flags=re.IGNORECASE):
+            self._append_unique(self.evidence.fonts, clean_text(font.strip("\"' ")), limit=16)
+
+    @staticmethod
+    def _append_unique(target: list[str], value: str, *, limit: int) -> None:
+        value = clean_text(value)
+        if not value or value in target:
+            return
+        if len(target) < limit:
+            target.append(value[:300])
+
+
+def parse_page_evidence(
+    html_text: str,
+    *,
+    base_url: str,
+    max_images: int,
+    allow_private_urls: bool = False,
+    include_images: bool = True,
+) -> PageEvidence:
+    parser = PageEvidenceParser(base_url)
+    parser.feed(html_text or "")
+    parser.close()
+    evidence = parser.evidence
+    evidence.media = [
+        item
+        for item in evidence.media
+        if is_url_allowed(item.url, allow_private_urls=allow_private_urls)
+    ][:max_images]
+    if not include_images:
+        evidence.media = [
+            item
+            for item in evidence.media
+            if item.source in {"og:image", "twitter:image", "twitter:image:src"}
+        ][:max_images]
+    return evidence
+
+
+def parse_srcset(srcset: str) -> list[str]:
+    urls: list[str] = []
+    for part in (srcset or "").split(","):
+        candidate = part.strip().split()
+        if candidate:
+            urls.append(candidate[0])
+    return urls
+
+
+def resolve_page_url(base_url: str, url: str) -> str:
+    url = html.unescape((url or "").strip())
+    if not url or url.startswith("data:") or url.startswith("blob:"):
+        return ""
+    return urljoin(base_url, url)
+
+
 class ObscuraSearchService:
     def __init__(self, config: SearchConfig, *, base_dir: str | Path | None = None) -> None:
         self.config = config
@@ -351,21 +734,36 @@ class ObscuraSearchService:
         if fetch_count <= 0:
             return SearchResponse(query=query, search_url=search_url, results=results)
 
-        tasks = [self._fetch_result_content(result) for result in results[:fetch_count]]
+        tasks = [self._fetch_result_evidence(result) for result in results[:fetch_count]]
         fetched = await asyncio.gather(*tasks, return_exceptions=True)
         for result, fetched_content in zip(results[:fetch_count], fetched, strict=False):
             if isinstance(fetched_content, Exception):
                 result.error = str(fetched_content)
             else:
-                result.content = fetched_content
+                result.content = fetched_content[0]
+                result.page = fetched_content[1]
 
         return SearchResponse(query=query, search_url=search_url, results=results)
 
-    async def _fetch_result_content(self, result: SearchResult) -> str:
+    async def _fetch_result_evidence(self, result: SearchResult) -> tuple[str, PageEvidence]:
         if not is_url_allowed(result.url, allow_private_urls=self.config.allow_private_urls):
             raise ObscuraError(f"结果 URL 被安全策略拦截：{result.url}")
         text = await self.fetch(result.url, dump="text")
-        return truncate_text(text, self.config.max_page_chars)
+        content = truncate_text(text, self.config.max_page_chars)
+        page_evidence = PageEvidence()
+        if self.config.media_extract_mode != "off" or self.config.summary_focus in {"visual_design", "site_overview"}:
+            try:
+                html_text = await self.fetch(result.url, dump="html")
+                page_evidence = parse_page_evidence(
+                    html_text,
+                    base_url=result.url,
+                    max_images=self.config.max_images_per_page,
+                    allow_private_urls=self.config.allow_private_urls,
+                    include_images=self.config.media_extract_mode != "off",
+                )
+            except ObscuraError as exc:
+                page_evidence.description = f"Page metadata extraction failed: {exc}"
+        return content, page_evidence
 
     async def fetch(self, url: str, *, dump: str = "text") -> str:
         obscura_path = resolve_obscura_path(self.config.obscura_path, base_dir=self.base_dir)

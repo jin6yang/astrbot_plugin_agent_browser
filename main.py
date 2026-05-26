@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from pydantic import Field
@@ -21,6 +22,7 @@ try:
         SearchResponse,
         config_from_mapping,
         extract_forced_query,
+        resolve_summary_prompt_template,
     )
 except ImportError:
     from obscura_service import (
@@ -30,23 +32,8 @@ except ImportError:
         SearchResponse,
         config_from_mapping,
         extract_forced_query,
+        resolve_summary_prompt_template,
     )
-
-
-SUMMARY_PROMPT_TEMPLATE = """你是一个严谨的联网搜索助手。请基于下面的 Obscura 浏览器搜索材料回答用户问题。
-
-要求：
-1. 优先使用搜索材料，不要把没有依据的内容说成事实。
-2. 结论后用 [1]、[2] 这样的编号标注来源。
-3. 如果材料不足，请明确说明不足，并给出已找到的信息。
-4. 用用户提问的语言回答，保持简洁但覆盖关键事实。
-
-用户问题：
-{query}
-
-搜索材料：
-{evidence}
-"""
 
 
 @dataclass
@@ -79,7 +66,6 @@ class ObscuraWebSearchTool(FunctionTool[AstrAgentContext]):
         context: ContextWrapper[AstrAgentContext],
         **kwargs: Any,
     ) -> ToolExecResult:
-        del context
         if self.service is None:
             return "error: Obscura search service is not initialized."
 
@@ -98,7 +84,45 @@ class ObscuraWebSearchTool(FunctionTool[AstrAgentContext]):
             logger.error(f"Obscura web search tool failed: {exc}", exc_info=True)
             return f"error: Obscura web search failed: {exc}"
 
+        await self._caption_images_from_tool_context(context, response)
         return response.to_markdown(include_content=True)
+
+    async def _caption_images_from_tool_context(
+        self,
+        context: ContextWrapper[AstrAgentContext],
+        response: SearchResponse,
+    ) -> None:
+        config = getattr(self.service, "config", None)
+        if (
+            config is None
+            or not config.enable_image_caption
+            or config.media_extract_mode != "images"
+            or not config.image_caption_provider_id
+        ):
+            return
+        try:
+            astr_context = context.context.context
+        except AttributeError:
+            logger.warning("Obscura tool could not access AstrBot context for image captioning.")
+            return
+
+        for result in response.results:
+            for media in result.page.media:
+                if media.visual_description or media.error:
+                    continue
+                try:
+                    llm_resp = await astr_context.llm_generate(
+                        chat_provider_id=config.image_caption_provider_id,
+                        prompt=(
+                            "请用中文简洁描述这张网页图片的可见内容。"
+                            "如果图片无法访问或无法识别，请说明无法判断。"
+                        ),
+                        image_urls=[media.url],
+                    )
+                    media.visual_description = (getattr(llm_resp, "completion_text", "") or "").strip()
+                except Exception as exc:  # noqa: BLE001 - optional tool evidence enrichment
+                    media.error = str(exc)
+                    logger.warning(f"Failed to caption image in Obscura tool call: {exc}")
 
 
 class ObscuraAgentBrowserPlugin(Star):
@@ -106,7 +130,12 @@ class ObscuraAgentBrowserPlugin(Star):
         super().__init__(context)
         self.config = config or {}
         self.search_config: SearchConfig = config_from_mapping(self.config)
-        self.search_service = ObscuraSearchService(self.search_config)
+        self.plugin_dir = Path(__file__).resolve().parent
+        self.search_service = ObscuraSearchService(self.search_config, base_dir=self.plugin_dir)
+        self.summary_prompt_template = resolve_summary_prompt_template(
+            self.search_config,
+            base_dir=self.plugin_dir,
+        )
 
         if self.search_config.enable_llm_tool:
             try:
@@ -118,17 +147,27 @@ class ObscuraAgentBrowserPlugin(Star):
     @filter.command("search", alias={"搜索"}, priority=10)
     async def search_command(self, event: AstrMessageEvent, query: GreedyStr):
         """强制使用 Obscura 搜索并总结。用法：/搜索 关键词 或 /search query"""
+        if not self.search_config.enable_force_commands:
+            yield event.plain_result("Obscura 显式搜索命令当前已在配置中禁用。")
+            event.stop_event()
+            return
         async for result in self._run_forced_search(event, str(query)):
             yield result
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
     async def search_prefix_listener(self, event: AstrMessageEvent):
         """监听非斜杠搜索前缀，例如：搜索 AstrBot 插件开发"""
-        query = extract_forced_query(
-            event.message_str,
-            self.search_config.force_prefixes,
-            include_slash_commands=False,
-        )
+        query = None
+        if self.search_config.enable_force_prefixes:
+            query = extract_forced_query(
+                event.message_str,
+                self.search_config.force_prefixes,
+                include_slash_commands=False,
+            )
+        if query is None and self.search_config.auto_search_policy == "always":
+            message = (event.message_str or "").strip()
+            if message and not message.startswith(("/", "!")):
+                query = message
         if query is None:
             return
         async for result in self._run_forced_search(event, query):
@@ -149,6 +188,7 @@ class ObscuraAgentBrowserPlugin(Star):
         try:
             logger.info(f"Obscura forced search query: {query}")
             search_response = await self.search_service.search(query)
+            await self._caption_images(search_response)
             answer = await self._summarize(event, query, search_response)
         except ObscuraError as exc:
             logger.warning(f"Obscura forced search failed: {exc}")
@@ -174,7 +214,15 @@ class ObscuraAgentBrowserPlugin(Star):
         if not provider_id:
             provider_id = await self.context.get_current_chat_provider_id(event.unified_msg_origin)
 
-        prompt = SUMMARY_PROMPT_TEMPLATE.format(query=query, evidence=evidence)
+        try:
+            prompt = self.summary_prompt_template.format(
+                query=query,
+                evidence=evidence,
+                summary_focus=self.search_config.summary_focus,
+            )
+        except (KeyError, ValueError) as exc:
+            logger.warning(f"Invalid Obscura summary prompt template, using raw evidence fallback: {exc}")
+            return "搜索完成，但摘要提示词模板格式无效。以下是原始搜索材料：\n\n" + evidence
         try:
             llm_resp = await self.context.llm_generate(
                 chat_provider_id=provider_id,
@@ -188,6 +236,35 @@ class ObscuraAgentBrowserPlugin(Star):
         if completion.strip():
             return completion.strip()
         return "搜索完成，但摘要模型没有返回文本。以下是原始搜索材料：\n\n" + evidence
+
+    async def _caption_images(self, search_response: SearchResponse) -> None:
+        if (
+            not self.search_config.enable_image_caption
+            or self.search_config.media_extract_mode != "images"
+        ):
+            return
+        provider_id = self.search_config.image_caption_provider_id
+        if not provider_id:
+            logger.warning("enable_image_caption is true but image_caption_provider_id is empty.")
+            return
+
+        for result in search_response.results:
+            for media in result.page.media:
+                if media.visual_description or media.error:
+                    continue
+                try:
+                    llm_resp = await self.context.llm_generate(
+                        chat_provider_id=provider_id,
+                        prompt=(
+                            "请用中文简洁描述这张网页图片的可见内容。"
+                            "如果图片无法访问或无法识别，请说明无法判断。"
+                        ),
+                        image_urls=[media.url],
+                    )
+                    media.visual_description = (getattr(llm_resp, "completion_text", "") or "").strip()
+                except Exception as exc:  # noqa: BLE001 - image caption is optional evidence enrichment
+                    media.error = str(exc)
+                    logger.warning(f"Failed to caption image with Obscura evidence: {exc}")
 
     async def terminate(self):
         """AstrBot unload hook."""

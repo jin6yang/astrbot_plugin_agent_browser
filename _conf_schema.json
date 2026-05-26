@@ -4,24 +4,62 @@
     "type": "bool",
     "default": true
   },
+  "enable_force_commands": {
+    "description": "启用显式搜索命令",
+    "type": "bool",
+    "default": true,
+    "hint": "控制 /搜索 和 /search。关闭后命令会返回禁用提示，不会执行搜索。"
+  },
+  "enable_force_prefixes": {
+    "description": "启用非斜杠搜索触发词",
+    "type": "bool",
+    "default": true,
+    "hint": "控制“搜索 ...”和“search ...”。关闭后可保留 force_prefixes 配置但临时停用。"
+  },
   "enable_llm_tool": {
     "description": "注册为 obscura_web_search LLM Tool",
     "type": "bool",
     "default": true,
-    "hint": "为支持工具调用的模型提供自主搜索的能力"
+    "hint": "为支持工具调用的模型提供自主搜索的能力。"
+  },
+  "auto_search_policy": {
+    "description": "自动搜索策略",
+    "type": "string",
+    "default": "tool",
+    "options": ["tool", "always"],
+    "hint": "tool 表示仅由显式触发或模型工具调用触发；always 会对普通消息总是搜索，成本较高，不推荐日常使用。"
   },
   "obscura_path": {
     "description": "Obscura 可执行文件路径",
     "type": "string",
     "default": "",
-    "hint": "为空时会优先使用插件目录下的 obscura-x86_64-windows/obscura.exe，再查找系统 PATH"
+    "hint": "为空时会优先使用插件目录下的 obscura-x86_64-windows/obscura.exe，再查找系统 PATH。"
   },
   "summary_provider_id": {
     "description": "强制搜索结果摘要使用的模型提供商",
     "type": "string",
     "default": "",
     "_special": "select_provider",
-    "hint": "为空时使用当前会话默认聊天模型"
+    "hint": "为空时使用当前会话默认聊天模型。"
+  },
+  "summary_prompt_template": {
+    "description": "摘要提示词模板",
+    "type": "text",
+    "default": "你是一个严谨的联网搜索助手。请基于下面的 Obscura 浏览器搜索材料回答用户问题。\n\n要求：\n1. 优先使用搜索材料，不要把没有依据的内容说成事实。\n2. 结论后用 [1]、[2] 这样的编号标注来源。\n3. 如果材料不足，请明确说明不足，并给出已找到的信息。\n4. 如果材料包含图片或设计线索，请区分“页面文字/DOM 元数据能确认的内容”和“无法直接确认的视觉细节”。\n5. 用用户提问的语言回答，保持简洁但覆盖关键事实。\n\n总结侧重点：{summary_focus}\n\n用户问题：\n{query}\n\n搜索材料：\n{evidence}\n",
+    "hint": "必须包含 {query} 和 {evidence}。如果 summary_prompt_file 指向的文件存在，会优先使用文件。"
+  },
+  "summary_prompt_file": {
+    "description": "摘要提示词 Markdown 文件",
+    "type": "string",
+    "default": "prompts/summary.md",
+    "hint": "相对路径按插件目录解析。文件存在且包含 {query} 与 {evidence} 时优先于 WebUI 模板。"
+  },
+  "summary_focus": {
+    "description": "摘要侧重点",
+    "type": "string",
+    "default": "auto",
+    "options": ["auto", "content", "visual_design", "site_overview"],
+    "hint": "visual_design 会额外强调页面结构、媒体使用和可解析的 CSS/DOM 线索。"
   },
   "search_engine": {
     "description": "搜索引擎类型",
@@ -33,7 +71,7 @@
     "description": "搜索 URL 模板",
     "type": "string",
     "default": "https://html.duckduckgo.com/html/?q={query}",
-    "hint": "支持 {query} 或 {query_encoded} 作为 URL 编码后的关键词，{raw_query} 作为原始关键词"
+    "hint": "支持 {query} 或 {query_encoded} 作为 URL 编码后的关键词，{raw_query} 作为原始关键词。"
   },
   "result_count": {
     "description": "最多解析多少条搜索结果",
@@ -62,32 +100,54 @@
     "items": {
       "type": "string"
     },
-    "hint": "如果想让模型完全自主判断，为空即可"
+    "hint": "配合 enable_force_prefixes 使用。关闭开关即可停用，不需要删除这里的关键词。"
+  },
+  "media_extract_mode": {
+    "description": "媒体证据提取模式",
+    "type": "string",
+    "default": "metadata_only",
+    "options": ["off", "metadata_only", "images"],
+    "hint": "off 不提取页面媒体；metadata_only 提取图片 URL、alt、caption 和 OpenGraph 元数据；images 在配置视觉模型后可进一步描述图片。"
+  },
+  "max_images_per_page": {
+    "description": "每个结果页最多保留多少张图片证据",
+    "type": "int",
+    "default": 5
+  },
+  "enable_image_caption": {
+    "description": "启用视觉模型图片描述",
+    "type": "bool",
+    "default": false,
+    "hint": "仅在 media_extract_mode=images 且 image_caption_provider_id 已配置时生效。"
+  },
+  "image_caption_provider_id": {
+    "description": "图片描述使用的视觉模型提供商",
+    "type": "string",
+    "default": "",
+    "_special": "select_provider"
   },
   "proxy": {
     "description": "Obscura 代理地址",
     "type": "string",
     "default": "",
-    "hint": "例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080"
+    "hint": "例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080。"
   },
   "user_agent": {
     "description": "自定义 User Agent (UA)",
     "type": "string",
     "default": "",
-    "hint": "比如：Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36"
-
+    "hint": "例如 Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36。"
   },
   "stealth": {
     "description": "启用 Obscura Stealth 模式",
     "type": "bool",
     "default": false,
-    "hint": "启用 Obscura 的特征隐匿模式。可以用于反指纹识别和追踪器阻断"
-
+    "hint": "启用 Obscura 的特征隐匿模式，可用于反指纹识别和追踪器阻断。"
   },
   "allow_private_urls": {
     "description": "允许访问本地和内网资源",
     "type": "bool",
     "default": false,
-    "hint": "默认关闭，阻止通过浏览器读取本机或内网资源的行为。开启后，即可通过浏览器访问 localhost、本地文件、私网 IP 和保留地址"
+    "hint": "默认关闭，阻止通过浏览器读取本机或内网资源。"
   }
 }

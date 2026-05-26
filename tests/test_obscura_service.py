@@ -8,11 +8,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from obscura_service import (  # noqa: E402
     build_search_url,
+    config_from_mapping,
     decode_duckduckgo_url,
     extract_forced_query,
+    is_valid_summary_prompt_template,
     is_url_allowed,
     parse_duckduckgo_results,
+    parse_page_evidence,
     resolve_obscura_path,
+    resolve_summary_prompt_template,
 )
 
 
@@ -90,6 +94,122 @@ class ObscuraServiceTests(unittest.TestCase):
             build_search_url("https://html.duckduckgo.com/html/?q={query}", "AstrBot 插件"),
             "https://html.duckduckgo.com/html/?q=AstrBot+%E6%8F%92%E4%BB%B6",
         )
+
+    def test_config_trigger_switches(self):
+        config = config_from_mapping(
+            {
+                "enable_force_commands": False,
+                "enable_force_prefixes": False,
+                "auto_search_policy": "always",
+            }
+        )
+
+        self.assertFalse(config.enable_force_commands)
+        self.assertFalse(config.enable_force_prefixes)
+        self.assertEqual(config.auto_search_policy, "always")
+
+    def test_prompt_file_precedence_and_validation(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt_dir = Path(tmpdir) / "prompts"
+            prompt_dir.mkdir()
+            prompt_file = prompt_dir / "summary.md"
+            prompt_file.write_text("FILE {query} {evidence}", encoding="utf-8")
+            config = config_from_mapping(
+                {
+                    "summary_prompt_file": "prompts/summary.md",
+                    "summary_prompt_template": "CONFIG {query} {evidence}",
+                }
+            )
+
+            self.assertEqual(resolve_summary_prompt_template(config, base_dir=tmpdir), "FILE {query} {evidence}")
+            self.assertTrue(is_valid_summary_prompt_template("OK {query} {evidence}"))
+            self.assertFalse(is_valid_summary_prompt_template("missing placeholders"))
+
+    def test_prompt_falls_back_when_file_and_config_invalid(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt_file = Path(tmpdir) / "summary.md"
+            prompt_file.write_text("invalid", encoding="utf-8")
+            config = config_from_mapping(
+                {
+                    "summary_prompt_file": "summary.md",
+                    "summary_prompt_template": "also invalid",
+                }
+            )
+
+            resolved = resolve_summary_prompt_template(config, base_dir=tmpdir)
+
+            self.assertIn("{query}", resolved)
+            self.assertIn("{evidence}", resolved)
+
+    def test_parse_page_evidence_media_and_design_tokens(self):
+        html = """
+        <html>
+          <head>
+            <title>Portfolio</title>
+            <meta name="description" content="Personal design blog">
+            <meta property="og:title" content="OG Portfolio">
+            <meta property="og:description" content="Design notes">
+            <meta property="og:image" content="/cover.jpg">
+            <style>
+              body { color: #123456; font-family: Inter, sans-serif; }
+              .hero { background: rgba(1, 2, 3, 0.4); }
+            </style>
+          </head>
+          <body>
+            <nav><a href="/work">Work</a></nav>
+            <h1>Selected Projects</h1>
+            <figure>
+              <img src="/hero.png" alt="Hero artwork" title="Hero title">
+              <figcaption>Main hero composition</figcaption>
+            </figure>
+            <picture>
+              <source srcset="/small.webp 1x, /large.webp 2x">
+            </picture>
+            <a href="/about">About</a>
+          </body>
+        </html>
+        """
+
+        evidence = parse_page_evidence(
+            html,
+            base_url="https://example.com/index.html",
+            max_images=5,
+        )
+
+        self.assertEqual(evidence.title, "Portfolio")
+        self.assertEqual(evidence.description, "Personal design blog")
+        self.assertIn("Selected Projects", evidence.headings)
+        self.assertIn("Work", evidence.nav_items)
+        self.assertIn("About", evidence.links)
+        self.assertIn("#123456", evidence.colors)
+        self.assertIn("Inter, sans-serif", evidence.fonts)
+        self.assertEqual(evidence.media[0].url, "https://example.com/cover.jpg")
+        hero = next(item for item in evidence.media if item.url == "https://example.com/hero.png")
+        self.assertEqual(hero.alt, "Hero artwork")
+        self.assertEqual(hero.caption, "Main hero composition")
+
+    def test_parse_page_evidence_blocks_private_images_and_mode_off(self):
+        html = """
+        <img src="http://127.0.0.1/private.png" alt="private">
+        <img src="https://example.com/public.png" alt="public">
+        """
+
+        evidence = parse_page_evidence(
+            html,
+            base_url="https://example.com",
+            max_images=5,
+            allow_private_urls=False,
+        )
+        no_images = parse_page_evidence(
+            html,
+            base_url="https://example.com",
+            max_images=5,
+            allow_private_urls=False,
+            include_images=False,
+        )
+
+        self.assertEqual([item.url for item in evidence.media], ["https://example.com/public.png"])
+        self.assertEqual(no_images.media, [])
 
 
 if __name__ == "__main__":
