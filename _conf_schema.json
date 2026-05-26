@@ -14,14 +14,14 @@
     "description": "Obscura 可执行文件路径",
     "type": "string",
     "default": "",
-    "hint": "为空时会优先使用插件目录下的 obscura-x86_64-windows/obscura.exe，再查找系统 PATH。"
+    "hint": "为空时会优先使用插件目录下的 obscura-x86_64-windows/obscura.exe，再查找系统 PATH"
   },
   "summary_provider_id": {
     "description": "强制搜索结果摘要使用的模型提供商",
     "type": "string",
     "default": "",
     "_special": "select_provider",
-    "hint": "为空时使用当前会话默认聊天模型。"
+    "hint": "为空时使用当前会话默认聊天模型"
   },
   "search_engine": {
     "description": "搜索引擎类型",
@@ -33,7 +33,7 @@
     "description": "搜索 URL 模板",
     "type": "string",
     "default": "https://html.duckduckgo.com/html/?q={query}",
-    "hint": "支持 {query} 或 {query_encoded} 作为 URL 编码后的关键词，{raw_query} 作为原始关键词。"
+    "hint": "支持 {query} 或 {query_encoded} 作为 URL 编码后的关键词，{raw_query} 作为原始关键词"
   },
   "result_count": {
     "description": "最多解析多少条搜索结果",
@@ -61,28 +61,33 @@
     "default": ["搜索", "search"],
     "items": {
       "type": "string"
-    }
+    },
+    "hint": "如果想让模型完全自主判断，为空即可"
   },
   "proxy": {
     "description": "Obscura 代理地址",
     "type": "string",
     "default": "",
-    "hint": "例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080。"
+    "hint": "例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080"
   },
   "user_agent": {
-    "description": "自定义 User-Agent",
+    "description": "自定义 User Agent (UA)",
     "type": "string",
-    "default": ""
+    "default": "",
+    "hint": "比如：Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.131 Safari/537.36"
+
   },
   "stealth": {
-    "description": "启用 Obscura stealth 模式",
-    "type": "bool",
-    "default": false
-  },
-  "allow_private_urls": {
-    "description": "允许访问 localhost、私网 IP、保留 IP",
+    "description": "启用 Obscura Stealth 模式",
     "type": "bool",
     "default": false,
-    "hint": "默认关闭，避免用户消息诱导浏览器读取本机或内网资源。"
+    "hint": "启用 Obscura 的特征隐匿模式。可以用于反指纹识别和追踪器阻断"
+
+  },
+  "allow_private_urls": {
+    "description": "允许访问本地和内网资源",
+    "type": "bool",
+    "default": false,
+    "hint": "默认关闭，阻止通过浏览器读取本机或内网资源的行为。开启后，即可通过浏览器访问 localhost、本地文件、私网 IP 和保留地址"
   }
 }
