@@ -36,28 +36,29 @@ The default mode is hybrid:
 - `enable_force_commands=true`: `/搜索` and `/search` force browser search.
 - `enable_force_prefixes=true`: configured prefixes such as `搜索` and `search` force browser search.
 - `enable_llm_tool=true`: the model can call `obscura_web_search` on its own if it supports tool calling.
+- `force_trigger_mode=main_bot`: forced searches inject evidence into the main bot request, so persona, context, and other plugins still shape the final reply.
 
 Set `enable_force_prefixes=false` when you want to keep the prefix list but temporarily stop prefix-based triggering.
+
+Use `force_trigger_mode=direct_reply` only when you want the plugin to summarize and reply by itself. In that mode, `summary_provider_id` controls the summarizer model.
 
 `auto_search_policy=always` is available for testing or narrow deployments, but it searches on every normal message and is usually wasteful.
 
 ## Prompt Customization
 
-The summary prompt is loaded in this order:
+Forced search uses two different prompts:
 
-1. `summary_prompt_file`, defaulting to `prompts/summary.md`.
-2. `summary_prompt_template` from the WebUI config.
-3. The built-in default prompt.
+- `forced_evidence_prompt_template`: used by `main_bot` mode to wrap evidence for the main bot.
+- `summary_prompt_template` or `summary_prompt_file`: used only by `direct_reply` mode.
 
-The template must contain `{query}` and `{evidence}`. It can also use `{summary_focus}`.
+`summary_prompt_source=file` reads `summary_prompt_file`. `summary_prompt_source=config` reads `summary_prompt_template`. The plugin uses the selected source directly and does not fallback to another source. Templates must contain `{query}` and `{evidence}`; they can also use `{summary_focus}`.
 
 ## Media and Design Evidence
 
-`media_extract_mode` controls extra page evidence:
+`enable_media_extraction` controls whether media evidence is collected. `media_extract_mode` controls how much media evidence is added:
 
-- `off`: only text excerpts.
 - `metadata_only`: image URLs, alt/title text, captions, OpenGraph metadata, headings, nav labels, links, and simple CSS tokens.
-- `images`: same as `metadata_only`, plus optional image captions when `enable_image_caption=true` and `image_caption_provider_id` points to a vision-capable provider.
+- `images`: same as `metadata_only`, plus optional image captions when `image_caption_provider_id` points to a vision-capable provider.
 
 Obscura does not provide full screenshot-level visual understanding here. Without `visual_caption`, the model should treat media evidence as metadata only.
 

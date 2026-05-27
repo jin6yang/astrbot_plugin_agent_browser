@@ -7,10 +7,15 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from obscura_service import (  # noqa: E402
+    ObscuraError,
+    ObscuraSearchService,
+    SearchConfig,
+    SearchResult,
     build_search_url,
     config_from_mapping,
     decode_duckduckgo_url,
     extract_forced_query,
+    is_valid_forced_evidence_template,
     is_valid_summary_prompt_template,
     is_url_allowed,
     parse_duckduckgo_results,
@@ -101,14 +106,16 @@ class ObscuraServiceTests(unittest.TestCase):
                 "enable_force_commands": False,
                 "enable_force_prefixes": False,
                 "auto_search_policy": "always",
+                "force_trigger_mode": "direct_reply",
             }
         )
 
         self.assertFalse(config.enable_force_commands)
         self.assertFalse(config.enable_force_prefixes)
         self.assertEqual(config.auto_search_policy, "always")
+        self.assertEqual(config.force_trigger_mode, "direct_reply")
 
-    def test_prompt_file_precedence_and_validation(self):
+    def test_prompt_source_file_and_config_are_explicit(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             prompt_dir = Path(tmpdir) / "prompts"
             prompt_dir.mkdir()
@@ -118,14 +125,24 @@ class ObscuraServiceTests(unittest.TestCase):
                 {
                     "summary_prompt_file": "prompts/summary.md",
                     "summary_prompt_template": "CONFIG {query} {evidence}",
+                    "summary_prompt_source": "file",
+                }
+            )
+            config_source = config_from_mapping(
+                {
+                    "summary_prompt_file": "prompts/summary.md",
+                    "summary_prompt_template": "CONFIG {query} {evidence}",
+                    "summary_prompt_source": "config",
                 }
             )
 
             self.assertEqual(resolve_summary_prompt_template(config, base_dir=tmpdir), "FILE {query} {evidence}")
+            self.assertEqual(resolve_summary_prompt_template(config_source, base_dir=tmpdir), "CONFIG {query} {evidence}")
             self.assertTrue(is_valid_summary_prompt_template("OK {query} {evidence}"))
+            self.assertTrue(is_valid_forced_evidence_template("OK {query} {evidence}"))
             self.assertFalse(is_valid_summary_prompt_template("missing placeholders"))
 
-    def test_prompt_falls_back_when_file_and_config_invalid(self):
+    def test_prompt_source_errors_do_not_fallback(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             prompt_file = Path(tmpdir) / "summary.md"
             prompt_file.write_text("invalid", encoding="utf-8")
@@ -136,10 +153,21 @@ class ObscuraServiceTests(unittest.TestCase):
                 }
             )
 
-            resolved = resolve_summary_prompt_template(config, base_dir=tmpdir)
+            with self.assertRaises(ObscuraError):
+                resolve_summary_prompt_template(config, base_dir=tmpdir)
 
-            self.assertIn("{query}", resolved)
-            self.assertIn("{evidence}", resolved)
+    def test_media_config_replaces_off_with_enable_switch(self):
+        config = config_from_mapping(
+            {
+                "enable_media_extraction": False,
+                "media_extract_mode": "off",
+                "image_caption_provider_id": "vision",
+            }
+        )
+
+        self.assertFalse(config.enable_media_extraction)
+        self.assertEqual(config.media_extract_mode, "metadata_only")
+        self.assertEqual(config.image_caption_provider_id, "vision")
 
     def test_parse_page_evidence_media_and_design_tokens(self):
         html = """
@@ -210,6 +238,40 @@ class ObscuraServiceTests(unittest.TestCase):
 
         self.assertEqual([item.url for item in evidence.media], ["https://example.com/public.png"])
         self.assertEqual(no_images.media, [])
+
+
+class ObscuraServiceAsyncTests(unittest.IsolatedAsyncioTestCase):
+    async def test_enable_media_extraction_false_skips_media_evidence(self):
+        class FakeService(ObscuraSearchService):
+            async def fetch(self, url: str, *, dump: str = "text") -> str:
+                if dump == "text":
+                    return "Visible body text"
+                return "<h1>Heading</h1><img src='https://example.com/image.png' alt='public'>"
+
+        service = FakeService(SearchConfig(enable_media_extraction=False))
+        content, page = await service._fetch_result_evidence(
+            SearchResult(title="Example", url="https://example.com")
+        )
+
+        self.assertEqual(content, "Visible body text")
+        self.assertFalse(page.has_content())
+
+    async def test_visual_focus_keeps_structure_without_media_when_disabled(self):
+        class FakeService(ObscuraSearchService):
+            async def fetch(self, url: str, *, dump: str = "text") -> str:
+                if dump == "text":
+                    return "Visible body text"
+                return "<h1>Heading</h1><img src='https://example.com/image.png' alt='public'>"
+
+        service = FakeService(
+            SearchConfig(enable_media_extraction=False, summary_focus="visual_design")
+        )
+        _, page = await service._fetch_result_evidence(
+            SearchResult(title="Example", url="https://example.com")
+        )
+
+        self.assertIn("Heading", page.headings)
+        self.assertEqual(page.media, [])
 
 
 if __name__ == "__main__":

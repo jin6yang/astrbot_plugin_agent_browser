@@ -16,6 +16,22 @@ from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 DEFAULT_SEARCH_URL_TEMPLATE = "https://html.duckduckgo.com/html/?q={query}"
 DEFAULT_FORCE_PREFIXES = ["搜索", "search"]
 DEFAULT_SUMMARY_PROMPT_FILE = "prompts/summary.md"
+DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE = """用户明确要求执行浏览器搜索。下面是 Obscura 搜索得到的证据，请结合当前人格、上下文和用户原始问题回答。
+
+要求：
+1. 优先依据搜索证据回答。
+2. 不要把搜索证据之外的推测说成事实。
+3. 如证据不足或搜索失败，请按当前对话风格说明。
+4. 如果引用来源，可以使用 [1]、[2] 这样的编号。
+
+总结侧重点：{summary_focus}
+
+强制搜索 query：
+{query}
+
+搜索证据：
+{evidence}
+"""
 DEFAULT_SUMMARY_PROMPT_TEMPLATE = """你是一个严谨的联网搜索助手。请基于下面的 Obscura 浏览器搜索材料回答用户问题。
 
 要求：
@@ -45,15 +61,18 @@ class SearchConfig:
     enable_force_commands: bool = True
     enable_force_prefixes: bool = True
     enable_llm_tool: bool = True
+    force_trigger_mode: str = "main_bot"
     obscura_path: str = ""
     summary_provider_id: str = ""
+    summary_prompt_source: str = "file"
     summary_prompt_template: str = DEFAULT_SUMMARY_PROMPT_TEMPLATE
     summary_prompt_file: str = DEFAULT_SUMMARY_PROMPT_FILE
+    forced_evidence_prompt_template: str = DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE
     auto_search_policy: str = "tool"
     summary_focus: str = "auto"
+    enable_media_extraction: bool = True
     media_extract_mode: str = "metadata_only"
     max_images_per_page: int = 5
-    enable_image_caption: bool = False
     image_caption_provider_id: str = ""
     search_engine: str = "duckduckgo_html"
     search_url_template: str = DEFAULT_SEARCH_URL_TEMPLATE
@@ -207,15 +226,18 @@ def config_from_mapping(config: Mapping[str, Any] | None) -> SearchConfig:
         enable_force_commands=_as_bool(raw.get("enable_force_commands", True)),
         enable_force_prefixes=_as_bool(raw.get("enable_force_prefixes", True)),
         enable_llm_tool=_as_bool(raw.get("enable_llm_tool", True)),
+        force_trigger_mode=_choice(raw.get("force_trigger_mode", "main_bot"), {"main_bot", "direct_reply"}, "main_bot"),
         obscura_path=str(raw.get("obscura_path", "") or "").strip(),
         summary_provider_id=str(raw.get("summary_provider_id", "") or "").strip(),
+        summary_prompt_source=_choice(raw.get("summary_prompt_source", "file"), {"file", "config"}, "file"),
         summary_prompt_template=str(raw.get("summary_prompt_template", DEFAULT_SUMMARY_PROMPT_TEMPLATE) or DEFAULT_SUMMARY_PROMPT_TEMPLATE),
         summary_prompt_file=str(raw.get("summary_prompt_file", DEFAULT_SUMMARY_PROMPT_FILE) or DEFAULT_SUMMARY_PROMPT_FILE).strip(),
+        forced_evidence_prompt_template=str(raw.get("forced_evidence_prompt_template", DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE) or DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE),
         auto_search_policy=_choice(raw.get("auto_search_policy", "tool"), {"tool", "always"}, "tool"),
         summary_focus=_choice(raw.get("summary_focus", "auto"), {"auto", "content", "visual_design", "site_overview"}, "auto"),
-        media_extract_mode=_choice(raw.get("media_extract_mode", "metadata_only"), {"off", "metadata_only", "images"}, "metadata_only"),
+        enable_media_extraction=_as_bool(raw.get("enable_media_extraction", True)),
+        media_extract_mode=_choice(raw.get("media_extract_mode", "metadata_only"), {"metadata_only", "images"}, "metadata_only"),
         max_images_per_page=max(0, _as_int(raw.get("max_images_per_page", 5), 5)),
-        enable_image_caption=_as_bool(raw.get("enable_image_caption", False)),
         image_caption_provider_id=str(raw.get("image_caption_provider_id", "") or "").strip(),
         search_engine=str(raw.get("search_engine", "duckduckgo_html") or "duckduckgo_html").strip(),
         search_url_template=str(raw.get("search_url_template", DEFAULT_SEARCH_URL_TEMPLATE) or DEFAULT_SEARCH_URL_TEMPLATE).strip(),
@@ -253,26 +275,27 @@ def _choice(value: Any, allowed: set[str], default: str) -> str:
 
 def resolve_summary_prompt_template(config: SearchConfig, *, base_dir: str | Path | None = None) -> str:
     root = Path(base_dir) if base_dir is not None else Path(__file__).resolve().parent
-    candidates: list[tuple[str, str]] = []
-    if config.summary_prompt_file:
+    if config.summary_prompt_source == "config":
+        template = config.summary_prompt_template
+    else:
         prompt_path = Path(os.path.expandvars(os.path.expanduser(config.summary_prompt_file)))
         if not prompt_path.is_absolute():
             prompt_path = root / prompt_path
-        if prompt_path.is_file():
-            try:
-                candidates.append(("file", prompt_path.read_text(encoding="utf-8")))
-            except OSError:
-                pass
-    candidates.append(("config", config.summary_prompt_template))
-    candidates.append(("default", DEFAULT_SUMMARY_PROMPT_TEMPLATE))
+        try:
+            template = prompt_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ObscuraError(f"摘要提示词文件无法读取：{prompt_path}") from exc
 
-    for _, template in candidates:
-        if is_valid_summary_prompt_template(template):
-            return template
-    return DEFAULT_SUMMARY_PROMPT_TEMPLATE
+    if not is_valid_summary_prompt_template(template):
+        raise ObscuraError("摘要提示词必须包含 {query} 和 {evidence}。")
+    return template
 
 
 def is_valid_summary_prompt_template(template: str) -> bool:
+    return "{query}" in template and "{evidence}" in template
+
+
+def is_valid_forced_evidence_template(template: str) -> bool:
     return "{query}" in template and "{evidence}" in template
 
 
@@ -680,11 +703,7 @@ def parse_page_evidence(
         if is_url_allowed(item.url, allow_private_urls=allow_private_urls)
     ][:max_images]
     if not include_images:
-        evidence.media = [
-            item
-            for item in evidence.media
-            if item.source in {"og:image", "twitter:image", "twitter:image:src"}
-        ][:max_images]
+        evidence.media = []
     return evidence
 
 
@@ -751,7 +770,11 @@ class ObscuraSearchService:
         text = await self.fetch(result.url, dump="text")
         content = truncate_text(text, self.config.max_page_chars)
         page_evidence = PageEvidence()
-        if self.config.media_extract_mode != "off" or self.config.summary_focus in {"visual_design", "site_overview"}:
+        should_extract_page_evidence = (
+            self.config.enable_media_extraction
+            or self.config.summary_focus in {"visual_design", "site_overview"}
+        )
+        if should_extract_page_evidence:
             try:
                 html_text = await self.fetch(result.url, dump="html")
                 page_evidence = parse_page_evidence(
@@ -759,7 +782,7 @@ class ObscuraSearchService:
                     base_url=result.url,
                     max_images=self.config.max_images_per_page,
                     allow_private_urls=self.config.allow_private_urls,
-                    include_images=self.config.media_extract_mode != "off",
+                    include_images=self.config.enable_media_extraction,
                 )
             except ObscuraError as exc:
                 page_evidence.description = f"Page metadata extraction failed: {exc}"

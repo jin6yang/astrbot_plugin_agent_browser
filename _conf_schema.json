@@ -5,16 +5,16 @@
     "default": true
   },
   "enable_force_commands": {
-    "description": "启用显式搜索命令",
+    "description": "启用插件内部命令",
     "type": "bool",
     "default": true,
-    "hint": "控制 /搜索 和 /search。关闭后命令会返回禁用提示，不会执行搜索。"
+    "hint": "控制是否允许使用 /搜索 和 /search 作为内部命令"
   },
   "enable_force_prefixes": {
-    "description": "启用非斜杠搜索触发词",
+    "description": "启用触发词",
     "type": "bool",
     "default": true,
-    "hint": "控制“搜索 ...”和“search ...”。关闭后可保留 force_prefixes 配置但临时停用。"
+    "hint": "控制是否允许使用触发词直接触发浏览器操作"
   },
   "enable_llm_tool": {
     "description": "注册为 obscura_web_search LLM Tool",
@@ -22,12 +22,25 @@
     "default": true,
     "hint": "为支持工具调用的模型提供自主搜索的能力。"
   },
+  "force_trigger_mode": {
+    "description": "强制触发处理模式",
+    "type": "string",
+    "default": "main_bot",
+    "options": [
+      "main_bot",
+      "direct_reply"
+    ],
+    "hint": "main_bot 表示搜索结果交给主 Bot 回答。direct_reply 表示插件直接总结并回复。"
+  },
   "auto_search_policy": {
     "description": "自动搜索策略",
     "type": "string",
     "default": "tool",
-    "options": ["tool", "always"],
-    "hint": "tool 表示仅由显式触发或模型工具调用触发；always 会对普通消息总是搜索，成本较高，不推荐日常使用。"
+    "options": [
+      "tool",
+      "always"
+    ],
+    "hint": "tool 表示本插件作为工具由外部触发。always 表示普通消息总是执行一次搜索"
   },
   "obscura_path": {
     "description": "Obscura 可执行文件路径",
@@ -36,36 +49,60 @@
     "hint": "为空时会优先使用插件目录下的 obscura-x86_64-windows/obscura.exe，再查找系统 PATH。"
   },
   "summary_provider_id": {
-    "description": "强制搜索结果摘要使用的模型提供商",
+    "description": "插件直出回复摘要模型",
     "type": "string",
     "default": "",
     "_special": "select_provider",
-    "hint": "为空时使用当前会话默认聊天模型。"
+    "hint": "仅在 force_trigger_mode=direct_reply 时使用。为空时使用当前会话默认聊天模型。"
+  },
+  "summary_prompt_source": {
+    "description": "摘要提示词来源",
+    "type": "string",
+    "default": "file",
+    "options": [
+      "file",
+      "config"
+    ],
+    "hint": "仅在 direct_reply 模式使用"
   },
   "summary_prompt_template": {
     "description": "摘要提示词模板",
     "type": "text",
     "default": "你是一个严谨的联网搜索助手。请基于下面的 Obscura 浏览器搜索材料回答用户问题。\n\n要求：\n1. 优先使用搜索材料，不要把没有依据的内容说成事实。\n2. 结论后用 [1]、[2] 这样的编号标注来源。\n3. 如果材料不足，请明确说明不足，并给出已找到的信息。\n4. 如果材料包含图片或设计线索，请区分“页面文字/DOM 元数据能确认的内容”和“无法直接确认的视觉细节”。\n5. 用用户提问的语言回答，保持简洁但覆盖关键事实。\n\n总结侧重点：{summary_focus}\n\n用户问题：\n{query}\n\n搜索材料：\n{evidence}\n",
-    "hint": "必须包含 {query} 和 {evidence}。如果 summary_prompt_file 指向的文件存在，会优先使用文件。"
+    "hint": "必须包含 {query} 和 {evidence}"
   },
   "summary_prompt_file": {
-    "description": "摘要提示词 Markdown 文件",
+    "description": "摘要提示词文件",
     "type": "string",
     "default": "prompts/summary.md",
-    "hint": "相对路径按插件目录解析。文件存在且包含 {query} 与 {evidence} 时优先于 WebUI 模板。"
+    "hint": "相对路径按插件目录解析"
+  },
+  "forced_evidence_prompt_template": {
+    "description": "主 Bot 搜索证据提示词",
+    "type": "text",
+    "default": "用户明确要求执行浏览器搜索。下面是 Obscura 搜索得到的证据，请结合当前人格、上下文和用户原始问题回答。\n\n要求：\n1. 优先依据搜索证据回答。\n2. 不要把搜索证据之外的推测说成事实。\n3. 如证据不足或搜索失败，请按当前对话风格说明。\n4. 如果引用来源，可以使用 [1]、[2] 这样的编号。\n\n总结侧重点：{summary_focus}\n\n强制搜索 query：\n{query}\n\n搜索证据：\n{evidence}\n",
+    "hint": "main_bot 模式使用。必须包含 {query} 和 {evidence}"
   },
   "summary_focus": {
     "description": "摘要侧重点",
     "type": "string",
     "default": "auto",
-    "options": ["auto", "content", "visual_design", "site_overview"],
+    "options": [
+      "auto",
+      "content",
+      "visual_design",
+      "site_overview"
+    ],
     "hint": "visual_design 会额外强调页面结构、媒体使用和可解析的 CSS/DOM 线索。"
   },
   "search_engine": {
     "description": "搜索引擎类型",
     "type": "string",
     "default": "duckduckgo_html",
-    "options": ["duckduckgo_html", "custom"]
+    "options": [
+      "duckduckgo_html",
+      "custom"
+    ]
   },
   "search_url_template": {
     "description": "搜索 URL 模板",
@@ -94,31 +131,36 @@
     "default": 4000
   },
   "force_prefixes": {
-    "description": "强制搜索触发词（非内部指令）",
+    "description": "强制搜索触发词（非内部命令）",
     "type": "list",
-    "default": ["搜索", "search"],
+    "default": [
+      "搜索",
+      "search"
+    ],
     "items": {
       "type": "string"
     },
     "hint": "配合 enable_force_prefixes 使用。关闭开关即可停用，不需要删除这里的关键词。"
   },
+  "enable_media_extraction": {
+    "description": "启用媒体提取",
+    "type": "bool",
+    "default": true
+  },
   "media_extract_mode": {
-    "description": "媒体证据提取模式",
+    "description": "媒体提取模式",
     "type": "string",
     "default": "metadata_only",
-    "options": ["off", "metadata_only", "images"],
-    "hint": "off 不提取页面媒体；metadata_only 提取图片 URL、alt、caption 和 OpenGraph 元数据；images 在配置视觉模型后可进一步描述图片。"
+    "options": [
+      "metadata_only",
+      "images"
+    ],
+    "hint": "metadata_only 提取图片元数据。images 在配置视觉模型后可进一步描述图片。"
   },
   "max_images_per_page": {
     "description": "每个结果页最多保留多少张图片证据",
     "type": "int",
     "default": 5
-  },
-  "enable_image_caption": {
-    "description": "启用视觉模型图片描述",
-    "type": "bool",
-    "default": false,
-    "hint": "仅在 media_extract_mode=images 且 image_caption_provider_id 已配置时生效。"
   },
   "image_caption_provider_id": {
     "description": "图片描述使用的视觉模型提供商",
@@ -136,7 +178,7 @@
     "description": "自定义 User Agent (UA)",
     "type": "string",
     "default": "",
-    "hint": "例如 Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36。"
+    "hint": "例如 Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
   },
   "stealth": {
     "description": "启用 Obscura Stealth 模式",
