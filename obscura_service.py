@@ -16,26 +16,26 @@ from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 DEFAULT_SEARCH_URL_TEMPLATE = "https://html.duckduckgo.com/html/?q={query}"
 DEFAULT_FORCE_PREFIXES = ["搜索", "search"]
 DEFAULT_SUMMARY_PROMPT_FILE = "prompts/summary.md"
-DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE = """用户明确要求执行浏览器搜索。下面是 Obscura 搜索得到的证据，请结合当前人格、上下文和用户原始问题回答。
+DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE = """用户明确要求使用 Obscura 浏览器能力。下面是 Obscura 得到的证据，请结合当前人格、上下文和用户原始问题回答。
 
 要求：
-1. 优先依据搜索证据回答。
-2. 不要把搜索证据之外的推测说成事实。
-3. 如证据不足或搜索失败，请按当前对话风格说明。
+1. 优先依据浏览器证据回答。
+2. 不要把证据之外的推测说成事实。
+3. 如证据不足或浏览失败，请按当前对话风格说明。
 4. 如果引用来源，可以使用 [1]、[2] 这样的编号。
 
 总结侧重点：{summary_focus}
 
-强制搜索 query：
+用户需求：
 {query}
 
-搜索证据：
+浏览器证据：
 {evidence}
 """
-DEFAULT_SUMMARY_PROMPT_TEMPLATE = """你是一个严谨的联网搜索助手。请基于下面的 Obscura 浏览器搜索材料回答用户问题。
+DEFAULT_SUMMARY_PROMPT_TEMPLATE = """你是一个严谨的联网浏览助手。请基于下面的 Obscura 浏览器材料回答用户问题。
 
 要求：
-1. 优先使用搜索材料，不要把没有依据的内容说成事实。
+1. 优先使用浏览器材料，不要把没有依据的内容说成事实。
 2. 结论后用 [1]、[2] 这样的编号标注来源。
 3. 如果材料不足，请明确说明不足，并给出已找到的信息。
 4. 如果材料包含图片或设计线索，请区分“页面文字/DOM 元数据能确认的内容”和“无法直接确认的视觉细节”。
@@ -46,7 +46,7 @@ DEFAULT_SUMMARY_PROMPT_TEMPLATE = """你是一个严谨的联网搜索助手。�
 用户问题：
 {query}
 
-搜索材料：
+浏览器材料：
 {evidence}
 """
 
@@ -69,6 +69,7 @@ class SearchConfig:
     summary_prompt_file: str = DEFAULT_SUMMARY_PROMPT_FILE
     forced_evidence_prompt_template: str = DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE
     auto_search_policy: str = "tool"
+    max_urls_per_request: int = 3
     summary_focus: str = "auto"
     enable_media_extraction: bool = True
     media_extract_mode: str = "metadata_only"
@@ -85,6 +86,13 @@ class SearchConfig:
     user_agent: str = ""
     stealth: bool = False
     allow_private_urls: bool = False
+
+
+@dataclass(slots=True)
+class ForcedTask:
+    kind: str
+    query: str
+    urls: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -185,10 +193,14 @@ class SearchResponse:
     query: str
     search_url: str
     results: list[SearchResult]
+    mode: str = "search"
     warning: str = ""
 
     def to_markdown(self, *, include_content: bool = True) -> str:
-        lines = [f"Query: {self.query}", f"Search URL: {self.search_url}"]
+        if self.mode == "open_urls":
+            lines = ["Task: open URLs", f"Question: {self.query}"]
+        else:
+            lines = [f"Query: {self.query}", f"Search URL: {self.search_url}"]
         if self.warning:
             lines.append(f"Warning: {self.warning}")
         if not self.results:
@@ -217,40 +229,54 @@ class SearchResponse:
 
 def config_from_mapping(config: Mapping[str, Any] | None) -> SearchConfig:
     raw: Mapping[str, Any] = config or {}
-    force_prefixes = raw.get("force_prefixes", DEFAULT_FORCE_PREFIXES)
+    general = _section(raw, "config_general")
+    force_trigger = _section(raw, "config_force_trigger")
+    main_bot = _section(raw, "config_main_bot")
+    direct_reply = _section(raw, "config_direct_reply")
+    search = _section(raw, "config_search")
+    media = _section(raw, "config_media")
+    advanced = _section(raw, "config_advanced")
+
+    force_prefixes = general.get("force_prefixes", DEFAULT_FORCE_PREFIXES)
     if not isinstance(force_prefixes, list):
         force_prefixes = DEFAULT_FORCE_PREFIXES
 
     return SearchConfig(
-        enabled=_as_bool(raw.get("enabled", True)),
-        enable_force_commands=_as_bool(raw.get("enable_force_commands", True)),
-        enable_force_prefixes=_as_bool(raw.get("enable_force_prefixes", True)),
-        enable_llm_tool=_as_bool(raw.get("enable_llm_tool", True)),
-        force_trigger_mode=_choice(raw.get("force_trigger_mode", "main_bot"), {"main_bot", "direct_reply"}, "main_bot"),
-        obscura_path=str(raw.get("obscura_path", "") or "").strip(),
-        summary_provider_id=str(raw.get("summary_provider_id", "") or "").strip(),
-        summary_prompt_source=_choice(raw.get("summary_prompt_source", "file"), {"file", "config"}, "file"),
-        summary_prompt_template=str(raw.get("summary_prompt_template", DEFAULT_SUMMARY_PROMPT_TEMPLATE) or DEFAULT_SUMMARY_PROMPT_TEMPLATE),
-        summary_prompt_file=str(raw.get("summary_prompt_file", DEFAULT_SUMMARY_PROMPT_FILE) or DEFAULT_SUMMARY_PROMPT_FILE).strip(),
-        forced_evidence_prompt_template=str(raw.get("forced_evidence_prompt_template", DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE) or DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE),
-        auto_search_policy=_choice(raw.get("auto_search_policy", "tool"), {"tool", "always"}, "tool"),
-        summary_focus=_choice(raw.get("summary_focus", "auto"), {"auto", "content", "visual_design", "site_overview"}, "auto"),
-        enable_media_extraction=_as_bool(raw.get("enable_media_extraction", True)),
-        media_extract_mode=_choice(raw.get("media_extract_mode", "metadata_only"), {"metadata_only", "images"}, "metadata_only"),
-        max_images_per_page=max(0, _as_int(raw.get("max_images_per_page", 5), 5)),
-        image_caption_provider_id=str(raw.get("image_caption_provider_id", "") or "").strip(),
-        search_engine=str(raw.get("search_engine", "duckduckgo_html") or "duckduckgo_html").strip(),
-        search_url_template=str(raw.get("search_url_template", DEFAULT_SEARCH_URL_TEMPLATE) or DEFAULT_SEARCH_URL_TEMPLATE).strip(),
-        result_count=max(1, _as_int(raw.get("result_count", 5), 5)),
-        fetch_top_pages=max(0, _as_int(raw.get("fetch_top_pages", 3), 3)),
-        timeout_seconds=max(1, _as_int(raw.get("timeout_seconds", 20), 20)),
-        max_page_chars=max(500, _as_int(raw.get("max_page_chars", 4000), 4000)),
+        enabled=_as_bool(general.get("enabled", True)),
+        enable_force_commands=_as_bool(general.get("enable_force_commands", True)),
+        enable_force_prefixes=_as_bool(general.get("enable_force_prefixes", True)),
+        enable_llm_tool=_as_bool(general.get("enable_llm_tool", True)),
+        force_trigger_mode=_choice(force_trigger.get("force_trigger_mode", "main_bot"), {"main_bot", "direct_reply"}, "main_bot"),
+        obscura_path=str(advanced.get("obscura_path", "") or "").strip(),
+        summary_provider_id=str(direct_reply.get("summary_provider_id", "") or "").strip(),
+        summary_prompt_source=_choice(direct_reply.get("summary_prompt_source", "file"), {"file", "config"}, "file"),
+        summary_prompt_template=str(direct_reply.get("summary_prompt_template", DEFAULT_SUMMARY_PROMPT_TEMPLATE) or DEFAULT_SUMMARY_PROMPT_TEMPLATE),
+        summary_prompt_file=str(direct_reply.get("summary_prompt_file", DEFAULT_SUMMARY_PROMPT_FILE) or DEFAULT_SUMMARY_PROMPT_FILE).strip(),
+        forced_evidence_prompt_template=str(main_bot.get("forced_evidence_prompt_template", DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE) or DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE),
+        auto_search_policy=_choice(force_trigger.get("auto_search_policy", "tool"), {"tool", "always"}, "tool"),
+        max_urls_per_request=max(1, _as_int(force_trigger.get("max_urls_per_request", 3), 3)),
+        summary_focus=_choice(search.get("summary_focus", "auto"), {"auto", "content", "visual_design", "site_overview"}, "auto"),
+        enable_media_extraction=_as_bool(media.get("enable_media_extraction", True)),
+        media_extract_mode=_choice(media.get("media_extract_mode", "metadata_only"), {"metadata_only", "images"}, "metadata_only"),
+        max_images_per_page=max(0, _as_int(media.get("max_images_per_page", 5), 5)),
+        image_caption_provider_id=str(media.get("image_caption_provider_id", "") or "").strip(),
+        search_engine=str(search.get("search_engine", "duckduckgo_html") or "duckduckgo_html").strip(),
+        search_url_template=str(search.get("search_url_template", DEFAULT_SEARCH_URL_TEMPLATE) or DEFAULT_SEARCH_URL_TEMPLATE).strip(),
+        result_count=max(1, _as_int(search.get("result_count", 5), 5)),
+        fetch_top_pages=max(0, _as_int(search.get("fetch_top_pages", 3), 3)),
+        timeout_seconds=max(1, _as_int(search.get("timeout_seconds", 20), 20)),
+        max_page_chars=max(500, _as_int(search.get("max_page_chars", 4000), 4000)),
         force_prefixes=[str(prefix).strip() for prefix in force_prefixes if str(prefix).strip()],
-        proxy=str(raw.get("proxy", "") or "").strip(),
-        user_agent=str(raw.get("user_agent", "") or "").strip(),
-        stealth=_as_bool(raw.get("stealth", False)),
-        allow_private_urls=_as_bool(raw.get("allow_private_urls", False)),
+        proxy=str(advanced.get("proxy", "") or "").strip(),
+        user_agent=str(advanced.get("user_agent", "") or "").strip(),
+        stealth=_as_bool(advanced.get("stealth", False)),
+        allow_private_urls=_as_bool(advanced.get("allow_private_urls", False)),
     )
+
+
+def _section(config: Mapping[str, Any], key: str) -> Mapping[str, Any]:
+    value = config.get(key, {})
+    return value if isinstance(value, Mapping) else {}
 
 
 def _as_bool(value: Any) -> bool:
@@ -314,9 +340,9 @@ def resolve_obscura_path(configured_path: str = "", *, base_dir: str | Path | No
             return found
         return None
 
-    local_windows_binary = root / "obscura-x86_64-windows" / "obscura.exe"
-    if local_windows_binary.is_file():
-        return str(local_windows_binary)
+    for local_binary in (root / "obscura" / "obscura.exe", root / "obscura" / "obscura"):
+        if local_binary.is_file():
+            return str(local_binary)
 
     return shutil.which("obscura") or shutil.which("obscura.exe")
 
@@ -360,6 +386,44 @@ def clean_text(value: str) -> str:
     value = html.unescape(value or "")
     value = re.sub(r"\s+", " ", value)
     return value.strip()
+
+
+URL_PATTERN = re.compile(r"https?://[^\s<>'\"`]+", flags=re.IGNORECASE)
+URL_TRAILING_CHARS = ".,;:!?)]}>，。！？；：、）】》」』”’"
+
+
+def extract_http_urls(text: str, *, limit: int | None = None) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for match in URL_PATTERN.finditer(text or ""):
+        candidate = _clean_url_candidate(match.group(0))
+        parsed = urlparse(candidate)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            continue
+        if candidate in seen:
+            continue
+        urls.append(candidate)
+        seen.add(candidate)
+        if limit is not None and len(urls) >= limit:
+            break
+    return urls
+
+
+def remove_http_urls(text: str) -> str:
+    return normalize_space(URL_PATTERN.sub(" ", text or ""))
+
+
+def build_forced_task(text: str, *, max_urls: int = 3) -> ForcedTask:
+    original = normalize_space(text)
+    urls = extract_http_urls(original, limit=max(1, max_urls))
+    if urls:
+        query = remove_http_urls(original) or original
+        return ForcedTask(kind="open_urls", query=query, urls=urls)
+    return ForcedTask(kind="search", query=original)
+
+
+def _clean_url_candidate(value: str) -> str:
+    return html.unescape((value or "").strip()).rstrip(URL_TRAILING_CHARS)
 
 
 def truncate_text(value: str, limit: int) -> str:
@@ -764,6 +828,66 @@ class ObscuraSearchService:
 
         return SearchResponse(query=query, search_url=search_url, results=results)
 
+    async def open_urls(
+        self,
+        urls: Sequence[str],
+        *,
+        question: str = "",
+        warning: str = "",
+    ) -> SearchResponse:
+        if not self.config.enabled:
+            raise ObscuraError("Obscura 搜索插件已在配置中禁用。")
+
+        normalized_urls: list[str] = []
+        seen: set[str] = set()
+        for raw_url in urls:
+            url = _clean_url_candidate(str(raw_url or ""))
+            if not url or url in seen:
+                continue
+            normalized_urls.append(url)
+            seen.add(url)
+            if len(normalized_urls) >= self.config.max_urls_per_request:
+                break
+
+        if not normalized_urls:
+            raise ObscuraError("没有可打开的 URL。")
+
+        results = [
+            SearchResult(
+                title=urlparse(url).netloc or url,
+                url=url,
+                snippet="Opened directly from user-provided URL.",
+            )
+            for url in normalized_urls
+        ]
+
+        allowed_results: list[SearchResult] = []
+        for result in results:
+            if is_url_allowed(result.url, allow_private_urls=self.config.allow_private_urls):
+                allowed_results.append(result)
+            else:
+                result.error = f"URL 被安全策略拦截：{result.url}"
+
+        fetched = await asyncio.gather(
+            *(self._fetch_result_evidence(result) for result in allowed_results),
+            return_exceptions=True,
+        )
+        for result, fetched_content in zip(allowed_results, fetched, strict=False):
+            if isinstance(fetched_content, Exception):
+                result.error = str(fetched_content)
+            else:
+                result.content = fetched_content[0]
+                result.page = fetched_content[1]
+
+        query = normalize_space(question) or " ".join(normalized_urls)
+        return SearchResponse(
+            query=query,
+            search_url="",
+            results=results,
+            mode="open_urls",
+            warning=warning,
+        )
+
     async def _fetch_result_evidence(self, result: SearchResult) -> tuple[str, PageEvidence]:
         if not is_url_allowed(result.url, allow_private_urls=self.config.allow_private_urls):
             raise ObscuraError(f"结果 URL 被安全策略拦截：{result.url}")
@@ -791,7 +915,7 @@ class ObscuraSearchService:
     async def fetch(self, url: str, *, dump: str = "text") -> str:
         obscura_path = resolve_obscura_path(self.config.obscura_path, base_dir=self.base_dir)
         if not obscura_path:
-            raise ObscuraError("未找到 Obscura 可执行文件。请在插件配置中设置 obscura_path，或将 obscura 加入 PATH。")
+            raise ObscuraError("未找到 Obscura 可执行文件。请在插件目录 obscura/ 中放置 obscura 可执行文件，或在配置中设置 obscura_path。")
         if not is_url_allowed(url, allow_private_urls=self.config.allow_private_urls):
             raise ObscuraError(f"URL 被安全策略拦截：{url}")
 

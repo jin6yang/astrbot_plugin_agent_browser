@@ -21,24 +21,32 @@ except ImportError:
 
 try:
     from .obscura_service import (
+        ForcedTask,
         ObscuraError,
         ObscuraSearchService,
         SearchConfig,
         SearchResponse,
+        build_forced_task,
         config_from_mapping,
         extract_forced_query,
+        extract_http_urls,
         is_valid_forced_evidence_template,
+        remove_http_urls,
         resolve_summary_prompt_template,
     )
 except ImportError:
     from obscura_service import (
+        ForcedTask,
         ObscuraError,
         ObscuraSearchService,
         SearchConfig,
         SearchResponse,
+        build_forced_task,
         config_from_mapping,
         extract_forced_query,
+        extract_http_urls,
         is_valid_forced_evidence_template,
+        remove_http_urls,
         resolve_summary_prompt_template,
     )
 
@@ -53,7 +61,8 @@ class ObscuraWebSearchTool(FunctionTool[AstrAgentContext]):
     name: str = "obscura_web_search"
     description: str = (
         "Search the web with the local Obscura headless browser and return source-grounded "
-        "evidence. Use this for recent, factual, source-dependent, or uncertain questions."
+        "evidence. Use this for recent, factual, source-dependent, or uncertain questions. "
+        "If the user provides a URL, prefer obscura_open_url; this tool also opens URLs as a fallback."
     )
     parameters: dict[str, Any] = Field(
         default_factory=lambda: {
@@ -89,7 +98,18 @@ class ObscuraWebSearchTool(FunctionTool[AstrAgentContext]):
             parsed_num_results = None
 
         try:
-            response = await self.service.search(query, num_results=parsed_num_results)
+            urls = extract_http_urls(
+                query,
+                limit=getattr(self.service.config, "max_urls_per_request", 3),
+            )
+            if urls:
+                response = await self.service.open_urls(
+                    urls,
+                    question=remove_http_urls(query) or query,
+                    warning="检测到 URL，已打开网页而不是执行搜索。",
+                )
+            else:
+                response = await self.service.search(query, num_results=parsed_num_results)
         except ObscuraError as exc:
             return f"error: {exc}"
         except Exception as exc:  # noqa: BLE001 - tool calls must not crash the agent loop
@@ -137,6 +157,98 @@ class ObscuraWebSearchTool(FunctionTool[AstrAgentContext]):
                     logger.warning(f"Failed to caption image in Obscura tool call: {exc}")
 
 
+@dataclass
+class ObscuraOpenUrlTool(FunctionTool[AstrAgentContext]):
+    name: str = "obscura_open_url"
+    description: str = (
+        "Open one or more http/https URLs with the local Obscura headless browser and return "
+        "page text, metadata, media, and design evidence. Use this when the user shares a URL "
+        "and asks what is on the page, asks for a summary, or asks a question about that URL."
+    )
+    parameters: dict[str, Any] = Field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "One or more http/https URLs to open.",
+                },
+                "question": {
+                    "type": "string",
+                    "description": "Optional user question or instruction about the URL content.",
+                },
+            },
+            "required": ["url"],
+        }
+    )
+    service: Any = Field(default=None, exclude=True)
+
+    async def call(
+        self,
+        context: ContextWrapper[AstrAgentContext],
+        **kwargs: Any,
+    ) -> ToolExecResult:
+        if self.service is None:
+            return "error: Obscura search service is not initialized."
+
+        url_text = str(kwargs.get("url", "") or "").strip()
+        question = str(kwargs.get("question", "") or "").strip()
+        urls = extract_http_urls(
+            url_text,
+            limit=getattr(self.service.config, "max_urls_per_request", 3),
+        )
+        if not urls and url_text:
+            urls = [url_text]
+
+        try:
+            response = await self.service.open_urls(urls, question=question or remove_http_urls(url_text))
+        except ObscuraError as exc:
+            return f"error: {exc}"
+        except Exception as exc:  # noqa: BLE001 - tool calls must not crash the agent loop
+            logger.error(f"Obscura open URL tool failed: {exc}", exc_info=True)
+            return f"error: Obscura open URL failed: {exc}"
+
+        await self._caption_images_from_tool_context(context, response)
+        return response.to_markdown(include_content=True)
+
+    async def _caption_images_from_tool_context(
+        self,
+        context: ContextWrapper[AstrAgentContext],
+        response: SearchResponse,
+    ) -> None:
+        config = getattr(self.service, "config", None)
+        if (
+            config is None
+            or not config.enable_media_extraction
+            or config.media_extract_mode != "images"
+            or not config.image_caption_provider_id
+        ):
+            return
+        try:
+            astr_context = context.context.context
+        except AttributeError:
+            logger.warning("Obscura tool could not access AstrBot context for image captioning.")
+            return
+
+        for result in response.results:
+            for media in result.page.media:
+                if media.visual_description or media.error:
+                    continue
+                try:
+                    llm_resp = await astr_context.llm_generate(
+                        chat_provider_id=config.image_caption_provider_id,
+                        prompt=(
+                            "请用中文简洁描述这张网页图片的可见内容。"
+                            "如果图片无法访问或无法识别，请说明无法判断。"
+                        ),
+                        image_urls=[media.url],
+                    )
+                    media.visual_description = (getattr(llm_resp, "completion_text", "") or "").strip()
+                except Exception as exc:  # noqa: BLE001 - optional tool evidence enrichment
+                    media.error = str(exc)
+                    logger.warning(f"Failed to caption image in Obscura open URL tool call: {exc}")
+
+
 class ObscuraAgentBrowserPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig | None = None):
         super().__init__(context)
@@ -144,12 +256,13 @@ class ObscuraAgentBrowserPlugin(Star):
         self.search_config: SearchConfig = config_from_mapping(self.config)
         self.plugin_dir = Path(__file__).resolve().parent
         self.search_service = ObscuraSearchService(self.search_config, base_dir=self.plugin_dir)
-        self._forced_queries: dict[str, str] = {}
+        self._forced_tasks: dict[str, ForcedTask] = {}
 
         if self.search_config.enable_llm_tool:
             try:
                 self.context.add_llm_tools(ObscuraWebSearchTool(service=self.search_service))
-                logger.info("Obscura LLM tool registered: obscura_web_search")
+                self.context.add_llm_tools(ObscuraOpenUrlTool(service=self.search_service))
+                logger.info("Obscura LLM tools registered: obscura_web_search, obscura_open_url")
             except Exception as exc:  # noqa: BLE001 - plugin should still load for explicit commands
                 logger.error(f"Failed to register Obscura LLM tool: {exc}", exc_info=True)
 
@@ -184,25 +297,25 @@ class ObscuraAgentBrowserPlugin(Star):
 
     @filter.on_llm_request()
     async def inject_forced_search_evidence(self, event: AstrMessageEvent, req: ProviderRequest):
-        query = self._consume_forced_query(event)
-        if not query:
+        task = self._consume_forced_task(event)
+        if not task:
             return
         if not self.search_config.enabled:
-            self._append_extra_user_text(req, "Obscura 搜索插件当前已禁用。")
+            self._append_extra_user_text(req, "Obscura 浏览插件当前已禁用。")
             return
 
         try:
-            logger.info(f"Obscura forced search evidence query: {query}")
-            search_response = await self.search_service.search(query)
+            logger.info(f"Obscura forced browser task: {task.kind} {task.query}")
+            search_response = await self._execute_forced_task(task)
             await self._caption_images(search_response)
             evidence = search_response.to_markdown(include_content=True)
-            forced_prompt = self._format_forced_evidence_prompt(query, evidence)
+            forced_prompt = self._format_forced_evidence_prompt(task.query, evidence)
         except ObscuraError as exc:
-            logger.warning(f"Obscura forced search evidence failed: {exc}")
-            forced_prompt = f"Obscura 搜索失败：{exc}"
+            logger.warning(f"Obscura forced browser evidence failed: {exc}")
+            forced_prompt = f"Obscura 浏览失败：{exc}"
         except Exception as exc:  # noqa: BLE001 - surface failure to the main model
-            logger.error(f"Unexpected Obscura forced search evidence failure: {exc}", exc_info=True)
-            forced_prompt = f"Obscura 搜索失败：{exc}"
+            logger.error(f"Unexpected Obscura forced browser evidence failure: {exc}", exc_info=True)
+            forced_prompt = f"Obscura 浏览失败：{exc}"
 
         self._append_extra_user_text(req, forced_prompt)
 
@@ -214,34 +327,38 @@ class ObscuraAgentBrowserPlugin(Star):
             return
 
         if not self.search_config.enabled:
-            yield event.plain_result("Obscura 搜索插件当前已禁用。")
+            yield event.plain_result("Obscura 浏览插件当前已禁用。")
             event.stop_event()
             return
 
+        task = build_forced_task(query, max_urls=self.search_config.max_urls_per_request)
         if self.search_config.force_trigger_mode == "main_bot":
-            self._record_forced_query(event, query)
+            self._record_forced_task(event, task)
             return
 
-        async for result in self._run_direct_reply_search(event, query):
+        async for result in self._run_direct_reply_task(event, task):
             yield result
 
-    async def _run_direct_reply_search(self, event: AstrMessageEvent, query: str):
-        query = (query or "").strip()
-
+    async def _run_direct_reply_task(self, event: AstrMessageEvent, task: ForcedTask):
         try:
-            logger.info(f"Obscura direct reply search query: {query}")
-            search_response = await self.search_service.search(query)
+            logger.info(f"Obscura direct reply browser task: {task.kind} {task.query}")
+            search_response = await self._execute_forced_task(task)
             await self._caption_images(search_response)
-            answer = await self._summarize(event, query, search_response)
+            answer = await self._summarize(event, task.query, search_response)
         except ObscuraError as exc:
-            logger.warning(f"Obscura forced search failed: {exc}")
-            answer = f"搜索失败：{exc}"
+            logger.warning(f"Obscura forced browser task failed: {exc}")
+            answer = f"浏览失败：{exc}"
         except Exception as exc:  # noqa: BLE001 - keep plugin failures visible but contained
-            logger.error(f"Unexpected Obscura forced search failure: {exc}", exc_info=True)
-            answer = f"搜索失败：{exc}"
+            logger.error(f"Unexpected Obscura forced browser task failure: {exc}", exc_info=True)
+            answer = f"浏览失败：{exc}"
 
         yield event.plain_result(answer)
         event.stop_event()
+
+    async def _execute_forced_task(self, task: ForcedTask) -> SearchResponse:
+        if task.kind == "open_urls":
+            return await self.search_service.open_urls(task.urls, question=task.query)
+        return await self.search_service.search(task.query)
 
     async def _summarize(
         self,
@@ -251,7 +368,7 @@ class ObscuraAgentBrowserPlugin(Star):
     ) -> str:
         evidence = search_response.to_markdown(include_content=True)
         if not search_response.results:
-            return f"没有解析到可用搜索结果。\n\n{evidence}"
+            return f"没有解析到可用浏览器材料。\n\n{evidence}"
 
         provider_id = self.search_config.summary_provider_id
         if not provider_id:
@@ -279,13 +396,13 @@ class ObscuraAgentBrowserPlugin(Star):
                 prompt=prompt,
             )
         except Exception as exc:  # noqa: BLE001 - fall back to raw evidence
-            logger.error(f"Failed to summarize Obscura search results: {exc}", exc_info=True)
-            return "搜索完成，但摘要模型调用失败。以下是原始搜索材料：\n\n" + evidence
+            logger.error(f"Failed to summarize Obscura browser evidence: {exc}", exc_info=True)
+            return "浏览完成，但摘要模型调用失败。以下是原始浏览器材料：\n\n" + evidence
 
         completion = getattr(llm_resp, "completion_text", "") or ""
         if completion.strip():
             return completion.strip()
-        return "搜索完成，但摘要模型没有返回文本。以下是原始搜索材料：\n\n" + evidence
+        return "浏览完成，但摘要模型没有返回文本。以下是原始浏览器材料：\n\n" + evidence
 
     async def _caption_images(self, search_response: SearchResponse) -> None:
         if (
@@ -314,13 +431,13 @@ class ObscuraAgentBrowserPlugin(Star):
                     media.error = str(exc)
                     logger.warning(f"Failed to caption image with Obscura evidence: {exc}")
 
-    def _record_forced_query(self, event: AstrMessageEvent, query: str) -> None:
-        if len(self._forced_queries) > 256:
-            self._forced_queries.clear()
-        self._forced_queries[self._event_key(event)] = query
+    def _record_forced_task(self, event: AstrMessageEvent, task: ForcedTask) -> None:
+        if len(self._forced_tasks) > 256:
+            self._forced_tasks.clear()
+        self._forced_tasks[self._event_key(event)] = task
 
-    def _consume_forced_query(self, event: AstrMessageEvent) -> str | None:
-        return self._forced_queries.pop(self._event_key(event), None)
+    def _consume_forced_task(self, event: AstrMessageEvent) -> ForcedTask | None:
+        return self._forced_tasks.pop(self._event_key(event), None)
 
     def _event_key(self, event: AstrMessageEvent) -> str:
         message_obj = getattr(event, "message_obj", None)
@@ -339,7 +456,7 @@ class ObscuraAgentBrowserPlugin(Star):
     def _format_forced_evidence_prompt(self, query: str, evidence: str) -> str:
         template = self.search_config.forced_evidence_prompt_template
         if not is_valid_forced_evidence_template(template):
-            raise ObscuraError("强制搜索证据提示词必须包含 {query} 和 {evidence}。")
+            raise ObscuraError("主 Bot 证据注入模板必须包含 {query} 和 {evidence}。")
         try:
             return template.format(
                 query=query,
@@ -347,7 +464,7 @@ class ObscuraAgentBrowserPlugin(Star):
                 summary_focus=self.search_config.summary_focus,
             )
         except (KeyError, ValueError) as exc:
-            raise ObscuraError(f"强制搜索证据提示词格式错误：{exc}") from exc
+            raise ObscuraError(f"主 Bot 证据注入模板格式错误：{exc}") from exc
 
     @staticmethod
     def _append_extra_user_text(req: ProviderRequest, text: str) -> None:
