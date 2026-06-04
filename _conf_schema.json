@@ -30,7 +30,7 @@
       "main_bot",
       "direct_reply"
     ],
-    "hint": "main_bot 表示搜索结果交给主 Bot 回答。direct_reply 表示插件直接总结并回复。"
+    "hint": "main_bot 表示强制主 Bot 在当前一轮对话中调用本插件。direct_reply 表示插件会绕过主 Bot 直接对用户提问进行搜索然后总结并回复"
   },
   "auto_search_policy": {
     "description": "自动搜索策略",
@@ -46,14 +46,14 @@
     "description": "Obscura 可执行文件路径",
     "type": "string",
     "default": "",
-    "hint": "为空时会优先使用插件目录下的 obscura-x86_64-windows/obscura.exe，再查找系统 PATH。"
+    "hint": "为空时会优先使用插件目录下的 obscura/obscura.exe, 如果不存在则会尝试在系统 PATH 中查找"
   },
   "summary_provider_id": {
-    "description": "插件直出回复摘要模型",
+    "description": "插件 direct_reply 模式 LLM 模型",
     "type": "string",
     "default": "",
     "_special": "select_provider",
-    "hint": "仅在 force_trigger_mode=direct_reply 时使用。为空时使用当前会话默认聊天模型。"
+    "hint": "仅在“强制触发处理模式”强为 direct_reply 时使用。为空时使用当前会话默认聊天模型"
   },
   "summary_prompt_source": {
     "description": "摘要提示词来源",
@@ -81,7 +81,7 @@
     "description": "主 Bot 搜索证据提示词",
     "type": "text",
     "default": "用户明确要求执行浏览器搜索。下面是 Obscura 搜索得到的证据，请结合当前人格、上下文和用户原始问题回答。\n\n要求：\n1. 优先依据搜索证据回答。\n2. 不要把搜索证据之外的推测说成事实。\n3. 如证据不足或搜索失败，请按当前对话风格说明。\n4. 如果引用来源，可以使用 [1]、[2] 这样的编号。\n\n总结侧重点：{summary_focus}\n\n强制搜索 query：\n{query}\n\n搜索证据：\n{evidence}\n",
-    "hint": "main_bot 模式使用。必须包含 {query} 和 {evidence}"
+    "hint": "仅在“强制触发处理模式”为 main_bot 时使用。必须包含 {query} 和 {evidence}"
   },
   "summary_focus": {
     "description": "摘要侧重点",
