@@ -38,11 +38,11 @@
     "type": "object",
     "items": {
       "force_trigger_mode": {
-        "description": "强制触发处理模式",
+        "description": "处理模式",
         "type": "string",
         "default": "main_bot",
         "options": ["main_bot", "direct_reply"],
-        "hint": "main_bot 交给主 Bot 回答；direct_reply 由插件直接回复"
+        "hint": "main_bot 模式：交给主 Bot 回答 | direct_reply 模式：由插件绕过主 Bot 使用单独的 LLM 总结并回复"
       },
       "auto_search_policy": {
         "description": "搜索策略",
@@ -101,11 +101,11 @@
     }
   },
   "config_search": {
-    "description": "搜索",
+    "description": "浏览器操作和搜索",
     "type": "object",
     "items": {
       "summary_focus": {
-        "description": "总结侧重点",
+        "description": "搜索结果总结侧重点",
         "type": "string",
         "default": "auto",
         "options": ["auto", "content", "visual_design", "site_overview"]
@@ -127,7 +127,7 @@
         "default": 5
       },
       "fetch_top_pages": {
-        "description": "抓取前几条结果",
+        "description": "抓取搜索结果的数量",
         "type": "int",
         "default": 3
       },
@@ -155,11 +155,11 @@
       "media_extract_mode": {
         "description": "媒体提取模式",
         "type": "string",
-        "default": "metadata_only",
-        "options": ["metadata_only", "images"]
+        "default": "images",
+        "options": ["images", "metadata_only"]
       },
       "max_images_per_page": {
-        "description": "单页图片提取数",
+        "description": "单个网页图片提取数",
         "type": "int",
         "default": 5
       },
@@ -180,7 +180,7 @@
         "description": "Obscura 可执行文件路径",
         "type": "string",
         "default": "",
-        "hint": "为空时会优先使用插件目录下的 obscura/obscura.exe, 如果不存在则会尝试在系统 PATH 中查找"
+        "hint": "为空时会优先使用插件目录下的 obscura 文件夹内的二进制文件（需命名为 obscura）, 如果不存在则会尝试在系统 PATH 中寻找"
       },
       "proxy": {
         "description": "Obscura 代理地址",
