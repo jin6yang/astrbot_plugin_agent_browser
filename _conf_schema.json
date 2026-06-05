@@ -75,10 +75,11 @@
     "type": "object",
     "items": {
       "summary_provider_id": {
-        "description": "直出回复模型",
+        "description": "LLM 模型",
         "type": "string",
         "default": "",
-        "_special": "select_provider"
+        "_special": "select_provider",
+        "hint": "为空时默认使用当前会话的模型"
       },
       "summary_prompt_source": {
         "description": "摘要提示词来源",
@@ -166,7 +167,8 @@
         "description": "图片描述模型",
         "type": "string",
         "default": "",
-        "_special": "select_provider"
+        "_special": "select_provider",
+        "hint": "为空时默认使用当前会话的模型"
       }
     }
   },
