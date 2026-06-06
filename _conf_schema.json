@@ -1,6 +1,6 @@
 {
   "config_general": {
-    "description": "通用",
+    "description": "⚙️ 通用",
     "type": "object",
     "items": {
       "enabled": {
@@ -37,7 +37,7 @@
     }
   },
   "config_force_trigger": {
-    "description": "强制触发",
+    "description": "🕹️ 强制触发",
     "type": "object",
     "items": {
       "force_trigger_mode": {
@@ -62,7 +62,7 @@
     }
   },
   "config_main_bot": {
-    "description": "main_bot 模式",
+    "description": "✨ main_bot 模式",
     "type": "object",
     "items": {
       "forced_evidence_prompt_template": {
@@ -74,7 +74,7 @@
     }
   },
   "config_direct_reply": {
-    "description": "direct_reply 模式",
+    "description": "🎯 direct_reply 模式",
     "type": "object",
     "items": {
       "summary_provider_id": {
@@ -104,7 +104,7 @@
     }
   },
   "config_search": {
-    "description": "浏览器操作和搜索",
+    "description": "🌐 浏览器操作和搜索",
     "type": "object",
     "items": {
       "summary_focus": {
@@ -147,7 +147,7 @@
     }
   },
   "config_media": {
-    "description": "网页媒体",
+    "description": "🖼️ 网页媒体",
     "type": "object",
     "items": {
       "enable_media_extraction": {
@@ -176,7 +176,7 @@
     }
   },
   "config_advanced": {
-    "description": "高级",
+    "description": "🚀 高级",
     "type": "object",
     "items": {
       "obscura_path": {
@@ -205,7 +205,7 @@
         "description": "允许访问本地和内网资源",
         "type": "bool",
         "default": false,
-        "hint": "⚠️高风险选项，默认关闭，阻止通过浏览器读取本机或内网资源"
+        "hint": "⚠️ 高风险选项，默认关闭，阻止通过浏览器读取本机或内网资源"
       }
     }
   }
