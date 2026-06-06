@@ -6,20 +6,23 @@
       "enabled": {
         "description": "启用插件",
         "type": "bool",
-        "default": true
+        "default": true,
+        "hint": "此为必须项"
+      },
+      "enable_llm_tool": {
+        "description": "注册为 AstrBot 函数工具",
+        "type": "bool",
+        "default": true,
+        "hint": "此为必须项"
       },
       "enable_force_commands": {
         "description": "启用内部指令",
         "type": "bool",
-        "default": true
+        "default": true,
+        "hint": "比如 /search 和 /搜索"
       },
       "enable_force_prefixes": {
         "description": "启用强制触发词",
-        "type": "bool",
-        "default": true
-      },
-      "enable_llm_tool": {
-        "description": "注册为 AstrBot 函数工具",
         "type": "bool",
         "default": true
       },
@@ -202,7 +205,7 @@
         "description": "允许访问本地和内网资源",
         "type": "bool",
         "default": false,
-        "hint": "默认关闭，阻止通过浏览器读取本机或内网资源"
+        "hint": "高风险选项，默认关闭，阻止通过浏览器读取本机或内网资源"
       }
     }
   }
