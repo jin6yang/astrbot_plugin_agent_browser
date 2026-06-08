@@ -24,7 +24,8 @@
       "enable_force_prefixes": {
         "description": "启用强制触发词",
         "type": "bool",
-        "default": true
+        "default": true,
+        "hint": "关闭本选项可阻止插件被除内部指令以外的方式强制触发，使用本插件的时机完全由 [主 Bot] 判断"
       },
       "force_prefixes": {
         "description": "触发词列表",
@@ -45,7 +46,7 @@
         "type": "string",
         "default": "main_bot",
         "options": ["main_bot", "direct_reply"],
-        "hint": "main_bot 模式：交给主 Bot 回答 | direct_reply 模式：由插件绕过主 Bot 使用单独的 LLM 总结并回复"
+        "hint": "main_bot 模式：强制插入搜索结果内容到 [主 Bot] 的提示词 | direct_reply 模式：绕过 [主 Bot] 使用单独的 LLM 总结并回复"
       },
       "auto_search_policy": {
         "description": "搜索策略",
@@ -55,7 +56,7 @@
         "hint": "always 会让普通消息也强制执行一次浏览器任务"
       },
       "max_urls_per_request": {
-        "description": "单次最多处理 URL 数",
+        "description": "单次最多处理的 URL 数",
         "type": "int",
         "default": 3
       }
@@ -85,19 +86,19 @@
         "hint": "为空时默认使用当前会话的模型"
       },
       "summary_prompt_source": {
-        "description": "摘要提示词来源",
+        "description": "总结提示词来源",
         "type": "string",
         "default": "file",
         "options": ["file", "config"]
       },
       "summary_prompt_template": {
-        "description": "摘要提示词模板",
+        "description": "总结提示词模板",
         "type": "text",
         "default": "你是一个严谨的联网浏览助手。请基于下面的 Obscura 浏览器材料回答用户问题。\n\n要求：\n1. 优先使用浏览器材料，不要把没有依据的内容说成事实。\n2. 结论后用 [1]、[2] 这样的编号标注来源。\n3. 如果材料不足，请明确说明不足，并给出已找到的信息。\n4. 如果材料包含图片或设计线索，请区分“页面文字/DOM 元数据能确认的内容”和“无法直接确认的视觉细节”。\n5. 用用户提问的语言回答，保持简洁但覆盖关键事实。\n\n总结侧重点：{summary_focus}\n\n用户问题：\n{query}\n\n浏览器材料：\n{evidence}\n",
         "hint": "必须包含 {query} 和 {evidence}"
       },
       "summary_prompt_file": {
-        "description": "摘要提示词文件",
+        "description": "总结提示词文件",
         "type": "string",
         "default": "prompts/summary.md"
       }
@@ -127,12 +128,14 @@
       "result_count": {
         "description": "搜索结果数",
         "type": "int",
-        "default": 5
+        "default": 5,
+        "hint": "使用浏览器打开网页和抓取内容需要耗费时间，且会消耗设备性能，但是 Obscura 很快很轻"
       },
       "fetch_top_pages": {
-        "description": "抓取搜索结果的数量",
+        "description": "抓取搜索结果正文的数量",
         "type": "int",
-        "default": 3
+        "default": 3,
+        "hint": "推荐设置为小于搜索结果数且大于 0. 此数值设置较大会导致明显更多的 Token 消耗。本配置设为 0 则只抓取搜索摘要而没有正文内容"
       },
       "timeout_seconds": {
         "description": "抓取超时秒数",

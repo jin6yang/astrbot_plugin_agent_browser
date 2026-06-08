@@ -219,6 +219,7 @@ __marimo__/
 
 # Customer
 docs_dev/
+Skills/
 obscura-source-code/
 obscura-dev/
 obscura-x86_64-windows/
@@ -226,3 +227,6 @@ obscura-x86_64-windows/
 # IDE
 .vs/
 .idea/
+
+# Agent Tool
+.qoderignore
