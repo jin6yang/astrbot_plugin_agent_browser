@@ -135,15 +135,15 @@
         "description": "抓取搜索结果正文的数量",
         "type": "int",
         "default": 3,
-        "hint": "推荐设置为小于搜索结果数且大于 0. 此数值设置较大会导致明显更多的 Token 消耗。本配置设为 0 则只抓取搜索摘要而没有正文内容"
+        "hint": "推荐设置为小于搜索结果数且大于 0. 此数值设置较大会导致明显更多的 Token 消耗。本配置设为 0 则只抓取搜索结果的标题和摘要而没有正文内容"
       },
       "timeout_seconds": {
-        "description": "抓取超时秒数",
+        "description": "抓取超时秒数（单个页面）",
         "type": "int",
         "default": 20
       },
       "max_page_chars": {
-        "description": "单页正文字符数",
+        "description": "抓取单页正文字符数（单个页面）",
         "type": "int",
         "default": 4000
       }
@@ -162,7 +162,8 @@
         "description": "媒体提取模式",
         "type": "string",
         "default": "images",
-        "options": ["images", "metadata_only"]
+        "options": ["images", "metadata_only"],
+        "hint": "images 模式会提取 HTML 中的 <img> 和 <source> 标签"
       },
       "max_images_per_page": {
         "description": "单个网页图片提取数",
@@ -183,13 +184,13 @@
     "type": "object",
     "items": {
       "obscura_path": {
-        "description": "Obscura 可执行文件路径",
+        "description": "Obscura 浏览器二进制文件路径",
         "type": "string",
         "default": "",
         "hint": "为空时会优先使用插件目录下的 obscura 文件夹内的二进制文件（需命名为 obscura）, 如果不存在则会尝试在系统 PATH 中寻找"
       },
       "proxy": {
-        "description": "Obscura 代理地址",
+        "description": "Obscura 浏览器代理地址",
         "type": "string",
         "default": ""
       },
@@ -208,7 +209,7 @@
         "description": "允许访问本地和内网资源",
         "type": "bool",
         "default": false,
-        "hint": "⚠️ 高风险选项，默认关闭，阻止通过浏览器读取本机或内网资源"
+        "hint": "⚠️ 高安全风险选项，默认关闭，阻止通过浏览器读取本机或内网资源"
       }
     }
   }
