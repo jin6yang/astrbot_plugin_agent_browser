@@ -1,7 +1,7 @@
 import re
 import html
 from html.parser import HTMLParser
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Sequence
 from urllib.parse import parse_qs, unquote, urlparse
 
 from ..models import SearchResult, SearchResponse, SearchConfig, ObscuraError
