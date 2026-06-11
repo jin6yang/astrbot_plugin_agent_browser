@@ -223,6 +223,8 @@ Skills/
 obscura-source-code/
 obscura-dev/
 obscura-x86_64-windows/
+_conf_schema-OLD.json
+_conf_schema-嵌套示例.json
 
 # IDE
 .vs/
