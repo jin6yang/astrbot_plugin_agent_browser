@@ -112,18 +112,26 @@
         "description": "搜索结果总结侧重点",
         "type": "string",
         "default": "auto",
-        "options": ["auto", "content", "visual_design", "site_overview"]
+        "options": ["auto", "content", "visual_design", "site_overview"],
+        "hint": "auto 模式：由 LLM 决定 | content 模式：侧重内容 | visual_design 模式：侧重于视觉设计 | site_overview 模式：侧重于整体结构"
       },
       "search_engine": {
         "description": "搜索引擎",
         "type": "string",
         "default": "duckduckgo_html",
-        "options": ["duckduckgo_html", "custom"]
+        "options": ["duckduckgo_html", "anysearch_api", "custom"]
+      },
+      "anysearch_api_key": {
+        "description": "AnySearch API Key",
+        "type": "string",
+        "default": "",
+        "hint": "选填，可以填写申请自 AnySearch 的 API 密钥。如果为空则会默认走匿名请求（免费，按 IP 配额）"
       },
       "search_url_template": {
-        "description": "搜索 URL 模板",
+        "description": "搜索引擎 URL 模板",
         "type": "string",
-        "default": "https://html.duckduckgo.com/html/?q={query}"
+        "default": "https://html.duckduckgo.com/html/?q={query}",
+        "hint": "选填，可以填写非 API 搜索引擎的 URL 模板"
       },
       "result_count": {
         "description": "搜索结果数",

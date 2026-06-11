@@ -12,219 +12,19 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from urllib.parse import parse_qs, quote_plus, unquote, urljoin, urlparse
 
-
-DEFAULT_SEARCH_URL_TEMPLATE = "https://html.duckduckgo.com/html/?q={query}"
-DEFAULT_FORCE_PREFIXES = ["搜索", "search"]
-DEFAULT_SUMMARY_PROMPT_FILE = "prompts/summary.md"
-DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE = """用户明确要求使用 Obscura 浏览器能力。下面是 Obscura 得到的证据，请结合当前人格、上下文和用户原始问题回答。
-
-要求：
-1. 优先依据浏览器证据回答。
-2. 不要把证据之外的推测说成事实。
-3. 如证据不足或浏览失败，请按当前对话风格说明。
-4. 如果引用来源，可以使用 [1]、[2] 这样的编号。
-
-总结侧重点：{summary_focus}
-
-用户需求：
-{query}
-
-浏览器证据：
-{evidence}
-"""
-DEFAULT_SUMMARY_PROMPT_TEMPLATE = """你是一个严谨的联网浏览助手。请基于下面的 Obscura 浏览器材料回答用户问题。
-
-要求：
-1. 优先使用浏览器材料，不要把没有依据的内容说成事实。
-2. 结论后用 [1]、[2] 这样的编号标注来源。
-3. 如果材料不足，请明确说明不足，并给出已找到的信息。
-4. 如果材料包含图片或设计线索，请区分“页面文字/DOM 元数据能确认的内容”和“无法直接确认的视觉细节”。
-5. 用用户提问的语言回答，保持简洁但覆盖关键事实。
-
-总结侧重点：{summary_focus}
-
-用户问题：
-{query}
-
-浏览器材料：
-{evidence}
-"""
-
-
-class ObscuraError(RuntimeError):
-    """Raised when Obscura cannot complete a browser operation."""
-
-
-@dataclass(slots=True)
-class SearchConfig:
-    enabled: bool = True
-    enable_force_commands: bool = True
-    enable_force_prefixes: bool = True
-    enable_llm_tool: bool = True
-    force_trigger_mode: str = "main_bot"
-    obscura_path: str = ""
-    summary_provider_id: str = ""
-    summary_prompt_source: str = "file"
-    summary_prompt_template: str = DEFAULT_SUMMARY_PROMPT_TEMPLATE
-    summary_prompt_file: str = DEFAULT_SUMMARY_PROMPT_FILE
-    forced_evidence_prompt_template: str = DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE
-    auto_search_policy: str = "tool"
-    max_urls_per_request: int = 3
-    summary_focus: str = "auto"
-    enable_media_extraction: bool = True
-    media_extract_mode: str = "metadata_only"
-    max_images_per_page: int = 5
-    image_caption_provider_id: str = ""
-    search_engine: str = "duckduckgo_html"
-    search_url_template: str = DEFAULT_SEARCH_URL_TEMPLATE
-    result_count: int = 5
-    fetch_top_pages: int = 3
-    timeout_seconds: int = 20
-    max_page_chars: int = 4000
-    force_prefixes: list[str] = field(default_factory=lambda: DEFAULT_FORCE_PREFIXES.copy())
-    proxy: str = ""
-    user_agent: str = ""
-    stealth: bool = False
-    allow_private_urls: bool = False
-
-
-@dataclass(slots=True)
-class ForcedTask:
-    kind: str
-    query: str
-    urls: list[str] = field(default_factory=list)
-
-
-@dataclass(slots=True)
-class MediaItem:
-    url: str
-    source: str = ""
-    alt: str = ""
-    title: str = ""
-    caption: str = ""
-    visual_description: str = ""
-    error: str = ""
-
-
-@dataclass(slots=True)
-class PageEvidence:
-    title: str = ""
-    description: str = ""
-    og_title: str = ""
-    og_description: str = ""
-    headings: list[str] = field(default_factory=list)
-    nav_items: list[str] = field(default_factory=list)
-    links: list[str] = field(default_factory=list)
-    colors: list[str] = field(default_factory=list)
-    fonts: list[str] = field(default_factory=list)
-    media: list[MediaItem] = field(default_factory=list)
-
-    def has_content(self) -> bool:
-        return bool(
-            self.title
-            or self.description
-            or self.og_title
-            or self.og_description
-            or self.headings
-            or self.nav_items
-            or self.links
-            or self.colors
-            or self.fonts
-            or self.media
-        )
-
-    def to_markdown_lines(self) -> list[str]:
-        lines: list[str] = []
-        if self.title:
-            lines.append(f"- Page title: {self.title}")
-        if self.description:
-            lines.append(f"- Meta description: {self.description}")
-        if self.og_title:
-            lines.append(f"- OpenGraph title: {self.og_title}")
-        if self.og_description:
-            lines.append(f"- OpenGraph description: {self.og_description}")
-        if self.headings:
-            lines.append("- Headings: " + "; ".join(self.headings[:8]))
-        if self.nav_items:
-            lines.append("- Navigation labels: " + "; ".join(self.nav_items[:10]))
-        if self.links:
-            lines.append("- Main links: " + "; ".join(self.links[:10]))
-        if self.colors:
-            lines.append("- CSS color tokens: " + ", ".join(self.colors[:12]))
-        if self.fonts:
-            lines.append("- CSS font tokens: " + ", ".join(self.fonts[:8]))
-        if self.media:
-            lines.append("- Media evidence:")
-            for index, media in enumerate(self.media[:10], start=1):
-                detail = [f"image {index}: {media.url}"]
-                if media.source:
-                    detail.append(f"source={media.source}")
-                if media.alt:
-                    detail.append(f"alt={media.alt}")
-                if media.title:
-                    detail.append(f"title={media.title}")
-                if media.caption:
-                    detail.append(f"caption={media.caption}")
-                if media.visual_description:
-                    detail.append(f"visual_caption={media.visual_description}")
-                if media.error:
-                    detail.append(f"caption_error={media.error}")
-                lines.append("  - " + " | ".join(detail))
-            if any(not item.visual_description for item in self.media):
-                lines.append(
-                    "  - Note: image pixels without visual_caption were not analyzed; "
-                    "only URL, alt/title text, captions, and page metadata are available."
-                )
-        return lines
-
-
-@dataclass(slots=True)
-class SearchResult:
-    title: str
-    url: str
-    snippet: str = ""
-    content: str = ""
-    error: str = ""
-    page: PageEvidence = field(default_factory=PageEvidence)
-
-
-@dataclass(slots=True)
-class SearchResponse:
-    query: str
-    search_url: str
-    results: list[SearchResult]
-    mode: str = "search"
-    warning: str = ""
-
-    def to_markdown(self, *, include_content: bool = True) -> str:
-        if self.mode == "open_urls":
-            lines = ["Task: open URLs", f"Question: {self.query}"]
-        else:
-            lines = [f"Query: {self.query}", f"Search URL: {self.search_url}"]
-        if self.warning:
-            lines.append(f"Warning: {self.warning}")
-        if not self.results:
-            lines.append("No results found.")
-            return "\n".join(lines)
-
-        lines.append("")
-        for index, result in enumerate(self.results, start=1):
-            lines.append(f"[{index}] {result.title}")
-            lines.append(f"URL: {result.url}")
-            if result.snippet:
-                lines.append(f"Snippet: {result.snippet}")
-            if include_content and result.page.has_content():
-                page_lines = result.page.to_markdown_lines()
-                if page_lines:
-                    lines.append("Page evidence:")
-                    lines.extend(page_lines)
-            if include_content and result.content:
-                lines.append("Content excerpt:")
-                lines.append(result.content)
-            if result.error:
-                lines.append(f"Fetch error: {result.error}")
-            lines.append("")
-        return "\n".join(lines).strip()
+from .models import (
+    DEFAULT_FORCE_PREFIXES,
+    DEFAULT_SEARCH_URL_TEMPLATE,
+    DEFAULT_SUMMARY_PROMPT_FILE,
+    ForcedTask,
+    MediaItem,
+    ObscuraError,
+    PageEvidence,
+    SearchConfig,
+    SearchResponse,
+    SearchResult,
+)
+from .search_providers import SearchProvider, DuckDuckGoProvider, AnySearchProvider
 
 
 def config_from_mapping(config: Mapping[str, Any] | None) -> SearchConfig:
@@ -250,9 +50,9 @@ def config_from_mapping(config: Mapping[str, Any] | None) -> SearchConfig:
         obscura_path=str(advanced.get("obscura_path", "") or "").strip(),
         summary_provider_id=str(direct_reply.get("summary_provider_id", "") or "").strip(),
         summary_prompt_source=_choice(direct_reply.get("summary_prompt_source", "file"), {"file", "config"}, "file"),
-        summary_prompt_template=str(direct_reply.get("summary_prompt_template", DEFAULT_SUMMARY_PROMPT_TEMPLATE) or DEFAULT_SUMMARY_PROMPT_TEMPLATE),
+        summary_prompt_template=str(direct_reply.get("summary_prompt_template", "")),
         summary_prompt_file=str(direct_reply.get("summary_prompt_file", DEFAULT_SUMMARY_PROMPT_FILE) or DEFAULT_SUMMARY_PROMPT_FILE).strip(),
-        forced_evidence_prompt_template=str(main_bot.get("forced_evidence_prompt_template", DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE) or DEFAULT_FORCED_EVIDENCE_PROMPT_TEMPLATE),
+        forced_evidence_prompt_template=str(main_bot.get("forced_evidence_prompt_template", "")),
         auto_search_policy=_choice(force_trigger.get("auto_search_policy", "tool"), {"tool", "always"}, "tool"),
         max_urls_per_request=max(1, _as_int(force_trigger.get("max_urls_per_request", 3), 3)),
         summary_focus=_choice(search.get("summary_focus", "auto"), {"auto", "content", "visual_design", "site_overview"}, "auto"),
@@ -261,6 +61,7 @@ def config_from_mapping(config: Mapping[str, Any] | None) -> SearchConfig:
         max_images_per_page=max(0, _as_int(media.get("max_images_per_page", 5), 5)),
         image_caption_provider_id=str(media.get("image_caption_provider_id", "") or "").strip(),
         search_engine=str(search.get("search_engine", "duckduckgo_html") or "duckduckgo_html").strip(),
+        anysearch_api_key=str(search.get("anysearch_api_key", "") or "").strip(),
         search_url_template=str(search.get("search_url_template", DEFAULT_SEARCH_URL_TEMPLATE) or DEFAULT_SEARCH_URL_TEMPLATE).strip(),
         result_count=max(1, _as_int(search.get("result_count", 5), 5)),
         fetch_top_pages=max(0, _as_int(search.get("fetch_top_pages", 3), 3)),
@@ -389,7 +190,7 @@ def clean_text(value: str) -> str:
 
 
 URL_PATTERN = re.compile(r"https?://[^\s<>'\"`]+", flags=re.IGNORECASE)
-URL_TRAILING_CHARS = ".,;:!?)]}>，。！？；：、）】》」』”’"
+URL_TRAILING_CHARS = ".,;:!?)]}>，。！？；：、）】》】”’"
 
 
 def extract_http_urls(text: str, *, limit: int | None = None) -> list[str]:
@@ -433,23 +234,6 @@ def truncate_text(value: str, limit: int) -> str:
     return value[: max(0, limit - 20)].rstrip() + "\n...[truncated]"
 
 
-def decode_duckduckgo_url(href: str) -> str:
-    href = html.unescape((href or "").strip())
-    if not href:
-        return ""
-    if href.startswith("//"):
-        href = "https:" + href
-    elif href.startswith("/"):
-        href = "https://duckduckgo.com" + href
-
-    parsed = urlparse(href)
-    if parsed.netloc.endswith("duckduckgo.com") and parsed.path.startswith("/l/"):
-        uddg = parse_qs(parsed.query).get("uddg")
-        if uddg:
-            return unquote(uddg[0])
-    return href
-
-
 def is_url_allowed(url: str, *, allow_private_urls: bool = False) -> bool:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"}:
@@ -462,6 +246,7 @@ def is_url_allowed(url: str, *, allow_private_urls: bool = False) -> bool:
         return False
 
     try:
+        import ipaddress
         ip = ipaddress.ip_address(host)
     except ValueError:
         return True
@@ -476,93 +261,6 @@ def is_url_allowed(url: str, *, allow_private_urls: bool = False) -> bool:
         or ip.is_reserved
         or ip.is_unspecified
     )
-
-
-class DuckDuckGoHTMLResultParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.results: list[SearchResult] = []
-        self._current: dict[str, str] | None = None
-        self._capture_title = False
-        self._capture_snippet = False
-        self._title_chunks: list[str] = []
-        self._snippet_chunks: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attrs_map = {key.lower(): value or "" for key, value in attrs}
-        classes = set(attrs_map.get("class", "").split())
-
-        if tag == "a" and "result__a" in classes:
-            self._flush_current()
-            self._current = {
-                "title": "",
-                "url": decode_duckduckgo_url(attrs_map.get("href", "")),
-                "snippet": "",
-            }
-            self._capture_title = True
-            self._title_chunks = []
-            return
-
-        if self._current is not None and ("result__snippet" in classes or "result__snippet" in attrs_map.get("class", "")):
-            self._capture_snippet = True
-            self._snippet_chunks = []
-
-    def handle_data(self, data: str) -> None:
-        if self._capture_title:
-            self._title_chunks.append(data)
-        if self._capture_snippet:
-            self._snippet_chunks.append(data)
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "a" and self._capture_title and self._current is not None:
-            self._current["title"] = clean_text("".join(self._title_chunks))
-            self._capture_title = False
-            self._title_chunks = []
-            return
-
-        if self._capture_snippet and tag in {"a", "div", "span"} and self._current is not None:
-            self._current["snippet"] = clean_text("".join(self._snippet_chunks))
-            self._capture_snippet = False
-            self._snippet_chunks = []
-            self._flush_current()
-
-    def close(self) -> None:
-        super().close()
-        self._flush_current()
-
-    def _flush_current(self) -> None:
-        if not self._current:
-            return
-        title = clean_text(self._current.get("title", ""))
-        url = self._current.get("url", "").strip()
-        if title and url:
-            self.results.append(
-                SearchResult(
-                    title=title,
-                    url=url,
-                    snippet=clean_text(self._current.get("snippet", "")),
-                )
-            )
-        self._current = None
-
-
-def parse_duckduckgo_results(html_text: str, *, limit: int, allow_private_urls: bool = False) -> list[SearchResult]:
-    parser = DuckDuckGoHTMLResultParser()
-    parser.feed(html_text or "")
-    parser.close()
-
-    results: list[SearchResult] = []
-    seen: set[str] = set()
-    for result in parser.results:
-        if result.url in seen:
-            continue
-        seen.add(result.url)
-        if not is_url_allowed(result.url, allow_private_urls=allow_private_urls):
-            continue
-        results.append(result)
-        if len(results) >= limit:
-            break
-    return results
 
 
 class PageEvidenceParser(HTMLParser):
@@ -792,6 +490,48 @@ class ObscuraSearchService:
         self.config = config
         self.base_dir = Path(base_dir) if base_dir is not None else Path(__file__).resolve().parent
 
+    def _get_provider(self) -> SearchProvider:
+        if self.config.search_engine == "anysearch_api":
+            return AnySearchProvider(self.config)
+        
+        async def fetch_html(url: str) -> str:
+            return await self.fetch(url, dump="html")
+        return DuckDuckGoProvider(self.config, html_fetcher=fetch_html)
+
+    async def _enrich_results(self, results: list[SearchResult]) -> None:
+        fetch_count = min(self.config.fetch_top_pages, len(results))
+        if fetch_count <= 0:
+            return
+
+        tasks = []
+        for result in results[:fetch_count]:
+            needs_content = not result.content
+            needs_evidence = self.config.enable_media_extraction or self.config.summary_focus in {"visual_design", "site_overview"}
+            if needs_content or needs_evidence:
+                tasks.append(self._fetch_result_evidence(result, needs_content=needs_content, needs_evidence=needs_evidence))
+
+        if not tasks:
+            return
+
+        fetched = await asyncio.gather(*tasks, return_exceptions=True)
+        # tasks list and results[:fetch_count] might not align if some results don't need enrichment.
+        # we iterate again to map back.
+        task_idx = 0
+        for result in results[:fetch_count]:
+            needs_content = not result.content
+            needs_evidence = self.config.enable_media_extraction or self.config.summary_focus in {"visual_design", "site_overview"}
+            if needs_content or needs_evidence:
+                fetched_content = fetched[task_idx]
+                task_idx += 1
+                if isinstance(fetched_content, Exception):
+                    result.error = str(fetched_content)
+                else:
+                    new_content, new_page = fetched_content
+                    if needs_content:
+                        result.content = new_content
+                    if needs_evidence:
+                        result.page = new_page
+
     async def search(self, query: str, *, num_results: int | None = None) -> SearchResponse:
         query = normalize_space(query)
         if not query:
@@ -799,34 +539,19 @@ class ObscuraSearchService:
         if not self.config.enabled:
             raise ObscuraError("Obscura 搜索插件已在配置中禁用。")
 
-        limit = max(1, min(num_results or self.config.result_count, self.config.result_count))
-        search_url = build_search_url(self.config.search_url_template, query)
-        if not is_url_allowed(search_url, allow_private_urls=self.config.allow_private_urls):
-            raise ObscuraError(f"搜索 URL 被安全策略拦截：{search_url}")
+        provider = self._get_provider()
+        response = await provider.search(query, num_results=num_results)
 
-        search_html = await self.fetch(search_url, dump="html")
-        results = parse_duckduckgo_results(
-            search_html,
-            limit=limit,
-            allow_private_urls=self.config.allow_private_urls,
-        )
-        if not results:
-            return SearchResponse(query=query, search_url=search_url, results=[], warning="搜索页没有解析到结果。")
-
-        fetch_count = min(self.config.fetch_top_pages, len(results))
-        if fetch_count <= 0:
-            return SearchResponse(query=query, search_url=search_url, results=results)
-
-        tasks = [self._fetch_result_evidence(result) for result in results[:fetch_count]]
-        fetched = await asyncio.gather(*tasks, return_exceptions=True)
-        for result, fetched_content in zip(results[:fetch_count], fetched, strict=False):
-            if isinstance(fetched_content, Exception):
-                result.error = str(fetched_content)
+        allowed_results: list[SearchResult] = []
+        for result in response.results:
+            if is_url_allowed(result.url, allow_private_urls=self.config.allow_private_urls):
+                allowed_results.append(result)
             else:
-                result.content = fetched_content[0]
-                result.page = fetched_content[1]
+                result.error = f"URL 被安全策略拦截：{result.url}"
 
-        return SearchResponse(query=query, search_url=search_url, results=results)
+        response.results = allowed_results
+        await self._enrich_results(response.results)
+        return response
 
     async def open_urls(
         self,
@@ -852,53 +577,31 @@ class ObscuraSearchService:
         if not normalized_urls:
             raise ObscuraError("没有可打开的 URL。")
 
-        results = [
-            SearchResult(
-                title=urlparse(url).netloc or url,
-                url=url,
-                snippet="Opened directly from user-provided URL.",
-            )
-            for url in normalized_urls
-        ]
+        provider = self._get_provider()
+        response = await provider.open_urls(normalized_urls, question=question, warning=warning)
 
         allowed_results: list[SearchResult] = []
-        for result in results:
+        for result in response.results:
             if is_url_allowed(result.url, allow_private_urls=self.config.allow_private_urls):
                 allowed_results.append(result)
             else:
                 result.error = f"URL 被安全策略拦截：{result.url}"
 
-        fetched = await asyncio.gather(
-            *(self._fetch_result_evidence(result) for result in allowed_results),
-            return_exceptions=True,
-        )
-        for result, fetched_content in zip(allowed_results, fetched, strict=False):
-            if isinstance(fetched_content, Exception):
-                result.error = str(fetched_content)
-            else:
-                result.content = fetched_content[0]
-                result.page = fetched_content[1]
+        response.results = allowed_results
+        await self._enrich_results(response.results)
+        return response
 
-        query = normalize_space(question) or " ".join(normalized_urls)
-        return SearchResponse(
-            query=query,
-            search_url="",
-            results=results,
-            mode="open_urls",
-            warning=warning,
-        )
-
-    async def _fetch_result_evidence(self, result: SearchResult) -> tuple[str, PageEvidence]:
+    async def _fetch_result_evidence(self, result: SearchResult, needs_content: bool, needs_evidence: bool) -> tuple[str, PageEvidence]:
         if not is_url_allowed(result.url, allow_private_urls=self.config.allow_private_urls):
             raise ObscuraError(f"结果 URL 被安全策略拦截：{result.url}")
-        text = await self.fetch(result.url, dump="text")
-        content = truncate_text(text, self.config.max_page_chars)
+        
+        content = ""
+        if needs_content:
+            text = await self.fetch(result.url, dump="text")
+            content = truncate_text(text, self.config.max_page_chars)
+            
         page_evidence = PageEvidence()
-        should_extract_page_evidence = (
-            self.config.enable_media_extraction
-            or self.config.summary_focus in {"visual_design", "site_overview"}
-        )
-        if should_extract_page_evidence:
+        if needs_evidence:
             try:
                 html_text = await self.fetch(result.url, dump="html")
                 page_evidence = parse_page_evidence(
