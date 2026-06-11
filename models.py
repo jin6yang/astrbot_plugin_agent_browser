@@ -31,7 +31,7 @@ class SearchConfig:
     max_images_per_page: int = 5
     image_caption_provider_id: str = ""
     search_engine: str = "duckduckgo_html"
-    anysearch_api_key: str = ""
+    search_api_key: str = ""
     search_url_template: str = DEFAULT_SEARCH_URL_TEMPLATE
     result_count: int = 5
     fetch_top_pages: int = 3

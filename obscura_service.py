@@ -24,7 +24,15 @@ from .models import (
     SearchResponse,
     SearchResult,
 )
-from .search_providers import SearchProvider, DuckDuckGoProvider, AnySearchProvider
+from .search_providers import (
+    SearchProvider, 
+    DuckDuckGoProvider, 
+    AnySearchProvider,
+    ExaProvider,
+    ParallelProvider,
+    PerplexityProvider,
+    TavilyProvider
+)
 
 
 def config_from_mapping(config: Mapping[str, Any] | None) -> SearchConfig:
@@ -61,7 +69,7 @@ def config_from_mapping(config: Mapping[str, Any] | None) -> SearchConfig:
         max_images_per_page=max(0, _as_int(media.get("max_images_per_page", 5), 5)),
         image_caption_provider_id=str(media.get("image_caption_provider_id", "") or "").strip(),
         search_engine=str(search.get("search_engine", "duckduckgo_html") or "duckduckgo_html").strip(),
-        anysearch_api_key=str(search.get("anysearch_api_key", "") or "").strip(),
+        search_api_key=str(search.get("search_api_key", search.get("anysearch_api_key", "")) or "").strip(),
         search_url_template=str(search.get("search_url_template", DEFAULT_SEARCH_URL_TEMPLATE) or DEFAULT_SEARCH_URL_TEMPLATE).strip(),
         result_count=max(1, _as_int(search.get("result_count", 5), 5)),
         fetch_top_pages=max(0, _as_int(search.get("fetch_top_pages", 3), 3)),
@@ -493,6 +501,14 @@ class ObscuraSearchService:
     def _get_provider(self) -> SearchProvider:
         if self.config.search_engine == "anysearch_api":
             return AnySearchProvider(self.config)
+        elif self.config.search_engine == "exa_api":
+            return ExaProvider(self.config)
+        elif self.config.search_engine == "parallel_api":
+            return ParallelProvider(self.config)
+        elif self.config.search_engine == "perplexity_api":
+            return PerplexityProvider(self.config)
+        elif self.config.search_engine == "tavily_api":
+            return TavilyProvider(self.config)
         
         async def fetch_html(url: str) -> str:
             return await self.fetch(url, dump="html")

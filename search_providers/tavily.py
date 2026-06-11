@@ -6,7 +6,7 @@ from typing import Sequence
 
 from ..models import SearchResult, SearchResponse, SearchConfig, ObscuraError
 
-class AnySearchProvider:
+class TavilyProvider:
     def __init__(self, config: SearchConfig) -> None:
         self.config = config
 
@@ -14,17 +14,21 @@ class AnySearchProvider:
         limit = max(1, min(num_results or self.config.result_count, 100))
         api_key = self.config.search_api_key
 
-        url = "https://api.anysearch.com/v1/search"
+        if not api_key:
+            raise ObscuraError("Tavily API key is required but not configured.")
+
+        url = "https://api.tavily.com/search"
         payload = {
+            "api_key": api_key,
             "query": query,
+            "search_depth": "advanced",
+            "include_raw_content": True,
             "max_results": limit
         }
         
         headers = {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
 
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
 
@@ -36,30 +40,29 @@ class AnySearchProvider:
                 body = e.read().decode("utf-8")
                 try:
                     err_json = json.loads(body)
-                    msg = err_json.get("message", str(e))
+                    msg = err_json.get("error", str(e))
                 except Exception:
                     msg = str(e)
-                raise ObscuraError(f"AnySearch API error: {msg}") from e
+                raise ObscuraError(f"Tavily API error: {msg}") from e
             except Exception as e:
-                raise ObscuraError(f"AnySearch request failed: {e}") from e
+                raise ObscuraError(f"Tavily request failed: {e}") from e
 
         data = await asyncio.to_thread(_do_request)
-        if data.get("code") != 0:
-            raise ObscuraError(f"AnySearch API error: {data.get('message', 'Unknown error')}")
         
         results = []
-        for item in data.get("data", {}).get("results", []):
+        for item in data.get("results", []):
+            content = item.get("raw_content") or item.get("content", "")
             results.append(SearchResult(
                 title=item.get("title", ""),
                 url=item.get("url", ""),
-                snippet=item.get("snippet", ""),
-                content=item.get("content", "")
+                snippet=item.get("content", ""),
+                content=content[:self.config.max_page_chars] if content else ""
             ))
             
         if not results:
-            return SearchResponse(query=query, search_url="AnySearch API", results=[], warning="搜索页没有解析到结果。")
+            return SearchResponse(query=query, search_url="Tavily API", results=[], warning="搜索页没有解析到结果。")
 
-        return SearchResponse(query=query, search_url="AnySearch API", results=results)
+        return SearchResponse(query=query, search_url="Tavily API", results=results)
 
     async def open_urls(self, urls: Sequence[str], *, question: str = "", warning: str = "") -> SearchResponse:
         from urllib.parse import urlparse

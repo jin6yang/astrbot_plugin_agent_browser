@@ -119,13 +119,22 @@
         "description": "搜索引擎",
         "type": "string",
         "default": "duckduckgo_html",
-        "options": ["duckduckgo_html", "anysearch_api", "custom"]
+        "options": [
+          "duckduckgo_html",
+          "anysearch_api",
+          "exa_api",
+          "parallel_api",
+          "perplexity_api",
+          "tavily_api",
+          "custom"
+        ],
+        "hint": "选择你的搜索引擎"
       },
-      "anysearch_api_key": {
-        "description": "AnySearch API Key",
+      "search_api_key": {
+        "description": "搜索引擎 API Key",
         "type": "string",
         "default": "",
-        "hint": "选填，可以填写申请自 AnySearch 的 API 密钥。如果为空则会默认走匿名请求（免费，按 IP 配额）"
+        "hint": "选填，可以填写相应搜索引擎的 API 密钥"
       },
       "search_url_template": {
         "description": "搜索引擎 URL 模板",

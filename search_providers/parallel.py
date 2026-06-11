@@ -6,25 +6,26 @@ from typing import Sequence
 
 from ..models import SearchResult, SearchResponse, SearchConfig, ObscuraError
 
-class AnySearchProvider:
+class ParallelProvider:
     def __init__(self, config: SearchConfig) -> None:
         self.config = config
 
     async def search(self, query: str, *, num_results: int | None = None) -> SearchResponse:
-        limit = max(1, min(num_results or self.config.result_count, 100))
         api_key = self.config.search_api_key
 
-        url = "https://api.anysearch.com/v1/search"
+        if not api_key:
+            raise ObscuraError("Parallel API key is required but not configured.")
+
+        url = "https://api.parallel.ai/v1/search"
         payload = {
-            "query": query,
-            "max_results": limit
+            "objective": query,
+            "search_queries": [query]
         }
         
         headers = {
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "x-api-key": api_key
         }
-        if api_key:
-            headers["Authorization"] = f"Bearer {api_key}"
 
         req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
 
@@ -36,30 +37,36 @@ class AnySearchProvider:
                 body = e.read().decode("utf-8")
                 try:
                     err_json = json.loads(body)
-                    msg = err_json.get("message", str(e))
+                    msg = err_json.get("error", str(e))
                 except Exception:
                     msg = str(e)
-                raise ObscuraError(f"AnySearch API error: {msg}") from e
+                raise ObscuraError(f"Parallel API error: {msg}") from e
             except Exception as e:
-                raise ObscuraError(f"AnySearch request failed: {e}") from e
+                raise ObscuraError(f"Parallel request failed: {e}") from e
 
         data = await asyncio.to_thread(_do_request)
-        if data.get("code") != 0:
-            raise ObscuraError(f"AnySearch API error: {data.get('message', 'Unknown error')}")
         
         results = []
-        for item in data.get("data", {}).get("results", []):
+        # Parallel returns results natively limited or sorted. 
+        # Since they don't have max_results param natively in search_queries, we clip it manually.
+        limit = max(1, min(num_results or self.config.result_count, 100))
+        
+        for item in data.get("results", [])[:limit]:
+            excerpts = item.get("excerpts", [])
+            snippet = excerpts[0][:300] if excerpts else ""
+            content = "\n".join(excerpts)
+
             results.append(SearchResult(
                 title=item.get("title", ""),
                 url=item.get("url", ""),
-                snippet=item.get("snippet", ""),
-                content=item.get("content", "")
+                snippet=snippet,
+                content=content
             ))
             
         if not results:
-            return SearchResponse(query=query, search_url="AnySearch API", results=[], warning="搜索页没有解析到结果。")
+            return SearchResponse(query=query, search_url="Parallel API", results=[], warning="搜索页没有解析到结果。")
 
-        return SearchResponse(query=query, search_url="AnySearch API", results=results)
+        return SearchResponse(query=query, search_url="Parallel API", results=results)
 
     async def open_urls(self, urls: Sequence[str], *, question: str = "", warning: str = "") -> SearchResponse:
         from urllib.parse import urlparse
