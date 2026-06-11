@@ -164,7 +164,8 @@
       "enable_media_extraction": {
         "description": "启用媒体提取",
         "type": "bool",
-        "default": true
+        "default": false,
+        "hint": "不支持媒体的搜索引擎，会按照 [🌐 浏览器操作和搜索] 中的设置决定是否使用 Obscura 提取内容"
       },
       "media_extract_mode": {
         "description": "媒体提取模式",
