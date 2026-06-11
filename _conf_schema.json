@@ -109,11 +109,11 @@
     "type": "object",
     "items": {
       "summary_focus": {
-        "description": "搜索结果总结侧重点",
+        "description": "总结搜索结果的侧重点",
         "type": "string",
         "default": "auto",
         "options": ["auto", "content", "visual_design", "site_overview"],
-        "hint": "auto 模式：由 LLM 决定 | content 模式：侧重内容 | visual_design 模式：侧重于视觉设计 | site_overview 模式：侧重于整体结构"
+        "hint": "auto 模式：由 LLM 决定 | content 模式：侧重正文文字内容 | visual_design 模式：侧重视觉设计（会提取媒体相关 HTML 标签） | site_overview 模式：侧重网页整体结构（会提取媒体相关 HTML 标签）"
       },
       "search_engine": {
         "description": "搜索引擎",
