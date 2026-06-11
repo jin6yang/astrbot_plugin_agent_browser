@@ -116,7 +116,7 @@
         "hint": "auto 模式：由 LLM 决定 | content 模式：侧重正文文字内容 | visual_design 模式：侧重视觉设计（会提取媒体相关 HTML 标签） | site_overview 模式：侧重网页整体结构（会提取媒体相关 HTML 标签）"
       },
       "search_engine": {
-        "description": "搜索引擎",
+        "description": "首选搜索引擎",
         "type": "string",
         "default": "duckduckgo_html",
         "options": [
@@ -128,7 +128,7 @@
           "tavily_api",
           "custom"
         ],
-        "hint": "选择你的搜索引擎"
+        "hint": "选择你的搜索引擎，这会作为首选项"
       },
       "search_api_key": {
         "description": "搜索引擎 API Key",
