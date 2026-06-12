@@ -2,10 +2,10 @@ name: astrbot_plugin_agent_browser
 display_name: Obscura Agent Browser
 author: POINTER
 version: 0.1.0
-description: Use Obscura as an AstrBot browser search tool with forced search commands and LLM tool calling.
-short_desc: Obscura browser search for AstrBot.
+description: 提供了 Obscura 浏览器给 LLM 自由操作，也可以用作搜索工具，支持自定义搜索引擎和 DuckDuckGo HTML, AnySearch API, exa API, parallel API, Perplexity API, Tavily API
+short_desc: Browser plugin for AstrBot. Powered By Obscura.
 repo: "https://github.com/jin6yang/astrbot_plugin_agent_browser"
-astrbot_version: ">=4.5.7,<5"
+astrbot_version: ">=4.5.7"
 support_platforms:
   - aiocqhttp
   - qq_official
