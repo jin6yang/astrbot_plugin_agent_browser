@@ -3,9 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
-from pydantic.dataclasses import dataclass
-
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
@@ -13,6 +10,8 @@ from astrbot.core.agent.run_context import ContextWrapper
 from astrbot.core.agent.tool import FunctionTool, ToolExecResult
 from astrbot.core.astr_agent_context import AstrAgentContext
 from astrbot.core.star.filter.command import GreedyStr
+from pydantic import Field
+from pydantic.dataclasses import dataclass
 
 try:
     from astrbot.core.agent.message import TextPart
@@ -109,7 +108,9 @@ class ObscuraWebSearchTool(FunctionTool[AstrAgentContext]):
                     warning="检测到 URL，已打开网页而不是执行搜索。",
                 )
             else:
-                response = await self.service.search(query, num_results=parsed_num_results)
+                response = await self.service.search(
+                    query, num_results=parsed_num_results
+                )
         except ObscuraError as exc:
             return f"error: {exc}"
         except Exception as exc:  # noqa: BLE001 - tool calls must not crash the agent loop
@@ -135,7 +136,9 @@ class ObscuraWebSearchTool(FunctionTool[AstrAgentContext]):
         try:
             astr_context = context.context.context
         except AttributeError:
-            logger.warning("Obscura tool could not access AstrBot context for image captioning.")
+            logger.warning(
+                "Obscura tool could not access AstrBot context for image captioning."
+            )
             return
 
         for result in response.results:
@@ -151,10 +154,14 @@ class ObscuraWebSearchTool(FunctionTool[AstrAgentContext]):
                         ),
                         image_urls=[media.url],
                     )
-                    media.visual_description = (getattr(llm_resp, "completion_text", "") or "").strip()
+                    media.visual_description = (
+                        getattr(llm_resp, "completion_text", "") or ""
+                    ).strip()
                 except Exception as exc:  # noqa: BLE001 - optional tool evidence enrichment
                     media.error = str(exc)
-                    logger.warning(f"Failed to caption image in Obscura tool call: {exc}")
+                    logger.warning(
+                        f"Failed to caption image in Obscura tool call: {exc}"
+                    )
 
 
 @dataclass
@@ -201,7 +208,9 @@ class ObscuraOpenUrlTool(FunctionTool[AstrAgentContext]):
             urls = [url_text]
 
         try:
-            response = await self.service.open_urls(urls, question=question or remove_http_urls(url_text))
+            response = await self.service.open_urls(
+                urls, question=question or remove_http_urls(url_text)
+            )
         except ObscuraError as exc:
             return f"error: {exc}"
         except Exception as exc:  # noqa: BLE001 - tool calls must not crash the agent loop
@@ -227,7 +236,9 @@ class ObscuraOpenUrlTool(FunctionTool[AstrAgentContext]):
         try:
             astr_context = context.context.context
         except AttributeError:
-            logger.warning("Obscura tool could not access AstrBot context for image captioning.")
+            logger.warning(
+                "Obscura tool could not access AstrBot context for image captioning."
+            )
             return
 
         for result in response.results:
@@ -243,10 +254,14 @@ class ObscuraOpenUrlTool(FunctionTool[AstrAgentContext]):
                         ),
                         image_urls=[media.url],
                     )
-                    media.visual_description = (getattr(llm_resp, "completion_text", "") or "").strip()
+                    media.visual_description = (
+                        getattr(llm_resp, "completion_text", "") or ""
+                    ).strip()
                 except Exception as exc:  # noqa: BLE001 - optional tool evidence enrichment
                     media.error = str(exc)
-                    logger.warning(f"Failed to caption image in Obscura open URL tool call: {exc}")
+                    logger.warning(
+                        f"Failed to caption image in Obscura open URL tool call: {exc}"
+                    )
 
 
 class ObscuraAgentBrowserPlugin(Star):
@@ -255,20 +270,30 @@ class ObscuraAgentBrowserPlugin(Star):
         self.config = config or {}
         self.search_config: SearchConfig = config_from_mapping(self.config)
         self.plugin_dir = Path(__file__).resolve().parent
-        self.search_service = ObscuraSearchService(self.search_config, base_dir=self.plugin_dir)
+        self.search_service = ObscuraSearchService(
+            self.search_config, base_dir=self.plugin_dir
+        )
         self._forced_tasks: dict[str, ForcedTask] = {}
 
         if self.search_config.enable_llm_tool:
             try:
-                self.context.add_llm_tools(ObscuraWebSearchTool(service=self.search_service))
-                self.context.add_llm_tools(ObscuraOpenUrlTool(service=self.search_service))
-                logger.info("Obscura LLM tools registered: obscura_web_search, obscura_open_url")
+                self.context.add_llm_tools(
+                    ObscuraWebSearchTool(service=self.search_service)
+                )
+                self.context.add_llm_tools(
+                    ObscuraOpenUrlTool(service=self.search_service)
+                )
+                logger.info(
+                    "Obscura LLM tools registered: obscura_web_search, obscura_open_url"
+                )
             except Exception as exc:  # noqa: BLE001 - plugin should still load for explicit commands
-                logger.error(f"Failed to register Obscura LLM tool: {exc}", exc_info=True)
+                logger.error(
+                    f"Failed to register Obscura LLM tool: {exc}", exc_info=True
+                )
 
     @filter.command("search", alias={"搜索"}, priority=10)
     async def search_command(self, event: AstrMessageEvent, query: GreedyStr):
-        """强制使用 Obscura 搜索并总结。用法：/搜索 关键词 或 /search query"""
+        """强制使用 Obscura 搜索并总结。用法：/搜索 {关键词} 或 /search {query}"""
         if not self.search_config.enable_force_commands:
             yield event.plain_result("Obscura 显式搜索命令当前已在配置中禁用。")
             event.stop_event()
@@ -296,7 +321,9 @@ class ObscuraAgentBrowserPlugin(Star):
             yield result
 
     @filter.on_llm_request()
-    async def inject_forced_search_evidence(self, event: AstrMessageEvent, req: ProviderRequest):
+    async def inject_forced_search_evidence(
+        self, event: AstrMessageEvent, req: ProviderRequest
+    ):
         task = self._consume_forced_task(event)
         if not task:
             return
@@ -314,7 +341,10 @@ class ObscuraAgentBrowserPlugin(Star):
             logger.warning(f"Obscura forced browser evidence failed: {exc}")
             forced_prompt = f"Obscura 浏览失败：{exc}"
         except Exception as exc:  # noqa: BLE001 - surface failure to the main model
-            logger.error(f"Unexpected Obscura forced browser evidence failure: {exc}", exc_info=True)
+            logger.error(
+                f"Unexpected Obscura forced browser evidence failure: {exc}",
+                exc_info=True,
+            )
             forced_prompt = f"Obscura 浏览失败：{exc}"
 
         self._append_extra_user_text(req, forced_prompt)
@@ -331,7 +361,9 @@ class ObscuraAgentBrowserPlugin(Star):
             event.stop_event()
             return
 
-        task = build_forced_task(query, max_urls=self.search_config.max_urls_per_request)
+        task = build_forced_task(
+            query, max_urls=self.search_config.max_urls_per_request
+        )
         if self.search_config.force_trigger_mode == "main_bot":
             self._record_forced_task(event, task)
             return
@@ -349,7 +381,9 @@ class ObscuraAgentBrowserPlugin(Star):
             logger.warning(f"Obscura forced browser task failed: {exc}")
             answer = f"浏览失败：{exc}"
         except Exception as exc:  # noqa: BLE001 - keep plugin failures visible but contained
-            logger.error(f"Unexpected Obscura forced browser task failure: {exc}", exc_info=True)
+            logger.error(
+                f"Unexpected Obscura forced browser task failure: {exc}", exc_info=True
+            )
             answer = f"浏览失败：{exc}"
 
         yield event.plain_result(answer)
@@ -372,7 +406,9 @@ class ObscuraAgentBrowserPlugin(Star):
 
         provider_id = self.search_config.summary_provider_id
         if not provider_id:
-            provider_id = await self.context.get_current_chat_provider_id(event.unified_msg_origin)
+            provider_id = await self.context.get_current_chat_provider_id(
+                event.unified_msg_origin
+            )
 
         try:
             summary_prompt_template = resolve_summary_prompt_template(
@@ -396,7 +432,9 @@ class ObscuraAgentBrowserPlugin(Star):
                 prompt=prompt,
             )
         except Exception as exc:  # noqa: BLE001 - fall back to raw evidence
-            logger.error(f"Failed to summarize Obscura browser evidence: {exc}", exc_info=True)
+            logger.error(
+                f"Failed to summarize Obscura browser evidence: {exc}", exc_info=True
+            )
             return "浏览完成，但摘要模型调用失败。以下是原始浏览器材料：\n\n" + evidence
 
         completion = getattr(llm_resp, "completion_text", "") or ""
@@ -426,10 +464,14 @@ class ObscuraAgentBrowserPlugin(Star):
                         ),
                         image_urls=[media.url],
                     )
-                    media.visual_description = (getattr(llm_resp, "completion_text", "") or "").strip()
+                    media.visual_description = (
+                        getattr(llm_resp, "completion_text", "") or ""
+                    ).strip()
                 except Exception as exc:  # noqa: BLE001 - image caption is optional evidence enrichment
                     media.error = str(exc)
-                    logger.warning(f"Failed to caption image with Obscura evidence: {exc}")
+                    logger.warning(
+                        f"Failed to caption image with Obscura evidence: {exc}"
+                    )
 
     def _record_forced_task(self, event: AstrMessageEvent, task: ForcedTask) -> None:
         if len(self._forced_tasks) > 256:
