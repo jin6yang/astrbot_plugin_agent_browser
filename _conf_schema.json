@@ -69,7 +69,7 @@
       "forced_evidence_prompt_template": {
         "description": "主 Bot 提示词注入模板",
         "type": "text",
-        "default": "用户明确要求使用 Obscura 浏览器能力。下面是 Obscura 得到的证据，请结合当前人格、上下文和用户原始问题回答。\n\n要求：\n1. 优先依据浏览器证据回答。\n2. 不要把证据之外的推测说成事实。\n3. 如证据不足或浏览失败，请按当前对话风格说明。\n4. 如果引用来源，可以使用 [1]、[2] 这样的编号。\n\n总结侧重点：{summary_focus}\n\n用户需求：\n{query}\n\n浏览器证据：\n{evidence}\n",
+        "default": "用户明确要求使用 Obscura 浏览器能力。下面是通过 Obscura 得到的证据，请结合当前人格、上下文和用户原始问题回答。\n\n要求：\n1. 优先依据浏览器证据回答。\n2. 不要把证据之外的推测说成事实。\n3. 如证据不足或浏览失败，请按当前对话风格说明。\n4. 如果引用来源，可以使用 [1]、[2] 这样的编号。\n\n总结侧重点：{summary_focus}\n\n用户需求：\n{query}\n\n浏览器证据：\n{evidence}\n",
         "hint": "必须包含 {query} 和 {evidence}"
       }
     }
@@ -79,7 +79,7 @@
     "type": "object",
     "items": {
       "summary_provider_id": {
-        "description": "LLM 模型",
+        "description": "LLM",
         "type": "string",
         "default": "",
         "_special": "select_provider",
