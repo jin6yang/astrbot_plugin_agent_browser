@@ -303,7 +303,7 @@ class ObscuraAgentBrowserPlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
     async def search_prefix_listener(self, event: AstrMessageEvent):
-        """监听非斜杠搜索前缀，例如：搜索 AstrBot 插件开发"""
+        """监听强制搜索触发词"""
         query = None
         if self.search_config.enable_force_prefixes:
             query = extract_forced_query(
