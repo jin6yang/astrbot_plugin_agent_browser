@@ -222,9 +222,11 @@ docs_dev/
 Skills/
 obscura-source-code/
 obscura-dev/
-obscura-x86_64-windows/
+web_ui/src
+
 _conf_schema-OLD.json
 _conf_schema-嵌套示例.json
+README - 模版.md
 
 # IDE
 .vs/

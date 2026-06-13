@@ -1,75 +1,174 @@
-# AstrBot Obscura Agent Browser
+<div align=center>
+  <img src="logo.png" alt="" width="128">
+</div>
 
-AstrBot plugin that uses the local [Obscura](https://github.com/h4ckf0r0day/obscura) binary as a lightweight browser search backend.
+<h2 align="center">
+Obscura Agent Browser
+</h2>
+<h2 align="center">
+Astrbot Plugin
+</h2>
+<h2 align="center">
+Astrbot 插件 - Obscura 浏览器代理
+</h2>
 
-## Features
 
-- `/搜索 <问题或URL>` and `/search <query-or-url>` force a browser task.
-- `搜索 <问题或URL>` and `search <query-or-url>` prefixes force the same flow without slash commands.
-- Registers `obscura_web_search` and `obscura_open_url` as AstrBot LLM Tools so capable models can decide whether to search or open a shared URL during normal chat.
-- Uses Obscura CLI on demand; no persistent browser server is started.
-- Defaults to DuckDuckGo HTML search and supports a configurable search URL template.
-- Extracts page text, OpenGraph metadata, headings, navigation labels, image URLs, alt text, captions, and basic CSS color/font tokens.
-- Can optionally call a configured vision provider to describe image URLs.
-- Blocks non-HTTP URLs, localhost, and private/reserved IPs by default.
+<div align="center">
+💖 一款为 AstrBot 提供浏览器的插件，允许大模型自由操作、搜索和浏览网页 😎
+</div>
+<div align="center">
+⚡ Powered By Obscura 🚀
+</div>
+<div align="center">
+由 POINTER 用 ❤️ 制作
+</div>
 
-## Obscura Binary
 
-Set `obscura_path` in the plugin config when Obscura is not on PATH. If left empty, the plugin tries:
+<div align="center">
 
-1. `obscura/obscura.exe` under this plugin directory.
-2. `obscura/obscura` under this plugin directory.
-3. `obscura` or `obscura.exe` from system PATH.
+[中文 README](README.md) | [English README](README_en.md)
 
-## Commands
+</div>
 
-```text
-/搜索 AstrBot 插件开发
-/search AstrBot plugin development
-搜索 AstrBot 插件开发
-search AstrBot plugin development
-/搜索 https://example.com 总结这个网页
-```
+> [!NOTE]
+> 本插件正在开发中......
+>
+> 本插件暂未上架 AstrBot 插件市场
+>
+> 本插件因为还在开发中，所以版本号可能会保持不变
 
-## Trigger Strategy
+## 主要功能和特色
 
-The default mode is hybrid:
+- 🔍 **支持多种开箱即用的搜索引擎**：支持 DuckDuckGo HTML（默认）、AnySearch API、exa API、Perplexity API、Tavily API. 当然还可以自定义搜索 URL.
+- ⚡ **轻量，高性能**：基于 Obscura，按需在后台调用 CLI，无需运行常驻的浏览器服务实例。
+- 📄 **深度网页解析**：不仅能够提取网页正文，还能提取 OpenGraph 元数据、标题层级、导航标签，以及基础的 CSS 颜色和字体 Token。
+- 👁️ **媒体与视觉支持**：支持提取网页图片 URL、替代文本 (alt text) 和图注。配置好描述模型后，可以尝试理解网页上的图片内容。
+- 🛡️ **安全机制**：默认拦截非 HTTP 协议 URL、localhost 以及私有/保留 IP，保障宿主机网络安全。
+- 🔮 **Web UI (正在开发中...)**: 支持通过 Web UI 管理 Obscura.
 
-- `enable_force_commands=true`: `/搜索` and `/search` force a browser task.
-- `enable_force_prefixes=true`: configured prefixes such as `搜索` and `search` force a browser task.
-- `enable_llm_tool=true`: the model can call `obscura_web_search` or `obscura_open_url` on its own if it supports tool calling.
-- `force_trigger_mode=main_bot`: forced tasks inject evidence into the main bot request, so persona, context, and other plugins still shape the final reply.
+## 安装
 
-Forced tasks parse URLs first. If the message contains `http://` or `https://`, Obscura opens those URLs; otherwise it performs a web search. In ordinary chat, the plugin does not intercept URLs by itself. The main model decides whether to call `obscura_open_url`.
+前往 AstrBot Web UI - 插件 - 右下角 "+" 号 - 从链接安装，填入本仓库的 URL 即可安装。
 
-Set `enable_force_prefixes=false` when you want to keep the prefix list but temporarily stop prefix-based triggering.
+## 使用
 
-Use `force_trigger_mode=direct_reply` only when you want the plugin to summarize and reply by itself. In that mode, `summary_provider_id` controls the summarizer model.
+插件安装成功并启用后，默认处于**混合触发模式**：
+- 你可以像日常聊天一样问问题，模型如果觉得有需要，会主动调用浏览器并在需要时执行搜索。
+- 也可以通过 AstrBot 指令或强制触发词进行搜索：
+  ```text
+  /搜索 AstrBot 插件开发
+  /search AstrBot plugin development
+  搜索 https://example.com 并总结这个网页
+  ```
 
-`auto_search_policy=always` is available for testing or narrow deployments, but it runs a browser task on every normal message and is usually wasteful.
+## 支持开箱即用的搜索引擎
 
-## Prompt Customization
+本插件内置了对多种开箱即用的搜索引擎，可以在配置页面轻松切换：
 
-Forced browser tasks use two different prompts:
+- **DuckDuckGo HTML**（免费）【默认】
+- **AnySearch API**（免费）
+- **exa API**（免费）
+- **parallel API**
+- **Perplexity API**
+- **Tavily API**（免费）
+- **自定义搜索 URL**
 
-- `forced_evidence_prompt_template`: used by `main_bot` mode to wrap forced-task evidence for the main bot.
-- `summary_prompt_template` or `summary_prompt_file`: used only by `direct_reply` mode.
+## 插件配置说明
 
-`summary_prompt_source=file` reads `summary_prompt_file`. `summary_prompt_source=config` reads `summary_prompt_template`. The plugin uses the selected source directly and does not fallback to another source. Templates must contain `{query}` and `{evidence}`; they can also use `{summary_focus}`.
+在 AstrBot Web UI 中打开本插件的设置页面，您可以对如下功能进行微调：
 
-## Media and Design Evidence
+### 普通配置
 
-`enable_media_extraction` controls whether media evidence is collected. `media_extract_mode` controls how much media evidence is added:
+- ⚙️ 通用
+- 🕹️ 强制触发
+- ✨🎯 强制触发模式配置
+- 🌐 浏览器操作和搜索
+- 🖼️ 网页媒体
+- 🚀 高级
 
-- `metadata_only`: image URLs, alt/title text, captions, OpenGraph metadata, headings, nav labels, links, and simple CSS tokens.
-- `images`: same as `metadata_only`, plus optional image captions when `image_caption_provider_id` points to a vision-capable provider.
+以上具体请查看 AstrBot 插件配置中的说明
 
-Obscura does not provide full screenshot-level visual understanding here. Without `visual_caption`, the model should treat media evidence as metadata only.
+### Obscura 二进制文件
 
-## Tests
+#### Web UI
 
-The unit tests use only the Python standard library:
+正在开发，将于之后推出......
 
-```powershell
-python -m unittest discover -s tests
-```
+#### CLI
+
+正在开发，将于之后推出......
+
+#### 手动
+
+首先，你需要从下载 Obscura, 
+
+[Releases · Obscura](https://github.com/h4ckf0r0day/obscura/releases)
+
+然后你有以下三种方案可以手动安装 Obscura:
+
+- 在本插件目录下放入 `obscura/obscura.exe` 或者 `obscura/obscura`
+- 把 `obscura.exe` 或者 `obscura` 添加进系统的环境变量
+- 指定一个绝对路径
+
+### 自定义提示词
+
+#### ✨ main_bot 模式
+
+用户明确要求使用 Obscura 浏览器能力。下面是通过 Obscura 得到的证据，请结合当前人格、上下文和用户原始问题回答。
+
+要求：
+1. 优先依据浏览器证据回答。
+2. 不要把证据之外的推测说成事实。
+3. 如证据不足或浏览失败，请按当前对话风格说明。
+4. 如果引用来源，可以使用 [1]、[2] 这样的编号。
+
+总结侧重点：{summary_focus}
+
+用户需求：
+{query}
+
+浏览器证据：
+{evidence}
+
+#### 🎯 direct_reply 模式
+
+你是一个严谨的联网浏览助手。请基于下面的 Obscura 浏览器材料回答用户问题。
+
+要求：
+1. 优先使用浏览器材料，不要把没有依据的内容说成事实。
+2. 结论后用 [1]、[2] 这样的编号标注来源。
+3. 如果材料不足，请明确说明不足，并给出已找到的信息。
+4. 如果材料包含图片或设计线索，请区分“页面文字/DOM 元数据能确认的内容”和“无法直接确认的视觉细节”。
+5. 用用户提问的语言回答，保持简洁但覆盖关键事实。
+
+总结侧重点：{summary_focus}
+
+用户问题：
+{query}
+
+浏览器材料：
+{evidence}
+
+## 插件安装位置
+
+Windows: `%USERPROFILE%\.astrbot\data\plugins\astrbot_plugin_agent_browser`
+
+Linux / macOS / OpenHarmony: 请根据 AstrBot 部署方式查找对应的目录
+
+## 感谢
+
+[Dependencies](https://github.com/jin6yang/astrbot_plugin_agent_browser/network/dependencies)
+
+[AstrBot✨](https://github.com/AstrBotDevs/AstrBot)
+
+[Obscura](https://github.com/h4ckf0r0day/obscura)
+
+## 开发支持
+
+- [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
+- [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
+- [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+
+## 许可证
+
+![](agplv3-155x51.png)
