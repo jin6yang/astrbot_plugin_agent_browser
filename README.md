@@ -100,7 +100,7 @@ Astrbot 插件 - Obscura 浏览器代理
 
 #### 手动
 
-首先，你需要从下载 Obscura, 
+首先，你需要下载 Obscura:
 
 [Releases · Obscura](https://github.com/h4ckf0r0day/obscura/releases)
 
