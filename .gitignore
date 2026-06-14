@@ -222,11 +222,16 @@ docs_dev/
 Skills/
 obscura-source-code/
 obscura-dev/
-web_ui/src
 
 _conf_schema-OLD.json
 _conf_schema-嵌套示例.json
 README - 模版.md
+
+# Web UI Docs
+# see other .gitignore
+
+# Web UI Code
+# see other .gitignore
 
 # IDE
 .vs/
