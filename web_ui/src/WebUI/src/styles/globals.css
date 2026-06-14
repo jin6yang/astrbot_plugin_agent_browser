@@ -1,4 +1,40 @@
 @import "tailwindcss";
 @import "@heroui/styles";
 
+@theme {
+  --color-primary-50: #eef4ff;
+  --color-primary-100: #d9e6ff;
+  --color-primary-200: #bccfff;
+  --color-primary-300: #8eb1ff;
+  --color-primary-400: #5c8aff;
+  --color-primary-500: #366ceb;
+  --color-primary-600: #1c419a;
+  --color-primary-700: #17327d;
+  --color-primary-800: #162a66;
+  --color-primary-900: #172650;
+  --color-primary-950: #0f162e;
+  
+  --color-primary: var(--color-primary-500);
+}
+
 @custom-variant dark (&:is(.dark *));
+
+:root {
+  --primary: #366ceb;
+  --primary-foreground: #ffffff;
+  --accent: #366ceb;
+  --accent-foreground: #ffffff;
+}
+
+.dark {
+  --primary: #1c419a;
+  --primary-foreground: #ffffff;
+  --accent: #1c419a;
+  --accent-foreground: #ffffff;
+}
+
+html, body {
+  min-height: 100vh;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
