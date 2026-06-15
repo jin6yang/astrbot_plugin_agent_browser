@@ -239,3 +239,7 @@ README - 模版.md
 
 # Agent Tool
 .qoderignore
+
+# Special Commit
+# Web UI Build
+!web_ui/dist/

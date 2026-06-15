@@ -73,7 +73,7 @@ async def install(request):
     return web.json_response({"success": True, "message": "安装任务已启动。"})
 
 async def index(request):
-    dist_dir = Path(os.getcwd()) / "web_ui" / "src" / "WebUI" / "dist"
+    dist_dir = Path(os.getcwd()) / "web_ui" / "dist"
     index_file = dist_dir / "index.html"
     if not index_file.exists():
         return web.Response(text="WebUI 还没有构建 (dist 目录不存在)。请先执行 npm run build。", content_type='text/html')
@@ -87,7 +87,7 @@ def setup_routes(app):
     app.router.add_get('/api/progress', get_progress)
     
     # Static files routing
-    dist_dir = Path(os.getcwd()) / "web_ui" / "src" / "WebUI" / "dist"
+    dist_dir = Path(os.getcwd()) / "web_ui" / "dist"
     if dist_dir.exists():
         app.router.add_static('/assets', path=str(dist_dir / "assets"), name='assets')
     app.router.add_get('/', index)
