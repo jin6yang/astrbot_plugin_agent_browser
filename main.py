@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import sys
+import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
 from astrbot.api import AstrBotConfig, logger
+from astrbot.api.web import json_response
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 from astrbot.core.agent.run_context import ContextWrapper
@@ -275,6 +279,9 @@ class ObscuraAgentBrowserPlugin(Star):
         )
         self._forced_tasks: dict[str, ForcedTask] = {}
 
+        self._generate_launcher_scripts()
+        self._register_launcher_endpoints()
+
         if self.search_config.enable_llm_tool:
             try:
                 self.context.add_llm_tools(
@@ -298,6 +305,84 @@ class ObscuraAgentBrowserPlugin(Star):
             yield event.plain_result("Obscura 显式搜索命令当前已在配置中禁用。")
             event.stop_event()
             return
+
+    def _generate_launcher_scripts(self):
+        """Generate independent .bat and .sh launcher scripts for WebUI and CLI"""
+        python_exe = sys.executable
+        plugin_root = self.plugin_dir
+        core_path = plugin_root / "obscura_manager" / "server.py"
+        
+        # WebUI scripts
+        webui_bat = plugin_root / "launch_webui.bat"
+        webui_bat.write_text(f'@echo off\n"{python_exe}" "{core_path}"\npause\n', encoding='utf-8')
+        
+        webui_sh = plugin_root / "launch_webui.sh"
+        webui_sh.write_text(f'#!/bin/bash\n"{python_exe}" "{core_path}"\n', encoding='utf-8')
+        try: os.chmod(webui_sh, 0o755)
+        except Exception: pass
+
+        # CLI scripts (Assuming server.py can take --cli or similar, or just distinct names)
+        # We'll just pass --cli for now, even if it ignores it, it's a good placeholder.
+        cli_bat = plugin_root / "launch_cli.bat"
+        cli_bat.write_text(f'@echo off\n"{python_exe}" "{core_path}" --cli\npause\n', encoding='utf-8')
+        
+        cli_sh = plugin_root / "launch_cli.sh"
+        cli_sh.write_text(f'#!/bin/bash\n"{python_exe}" "{core_path}" --cli\n', encoding='utf-8')
+        try: os.chmod(cli_sh, 0o755)
+        except Exception: pass
+
+    def _register_launcher_endpoints(self):
+        """Register endpoints for the Launcher Dashboard Page"""
+        plugin_name = "astrbot_plugin_agent_browser"
+        
+        # Status endpoint
+        self.context.register_web_api(
+            f"/{plugin_name}/launcher/status",
+            self.handle_launcher_status,
+            ["GET"],
+            "Check Obscura Manager status"
+        )
+        
+        # Start WebUI endpoint
+        self.context.register_web_api(
+            f"/{plugin_name}/launcher/start_webui",
+            self.handle_start_webui,
+            ["POST"],
+            "Start standalone WebUI"
+        )
+        
+        # Start CLI endpoint
+        self.context.register_web_api(
+            f"/{plugin_name}/launcher/start_cli",
+            self.handle_start_cli,
+            ["POST"],
+            "Start standalone CLI"
+        )
+
+    async def handle_launcher_status(self):
+        # We could check if port 8000 is listening or if process exists
+        return json_response({"status": "ok", "message": "Launcher Ready"})
+
+    async def handle_start_webui(self):
+        try:
+            core_path = self.plugin_dir / "obscura_manager" / "server.py"
+            # CREATE_NEW_CONSOLE is Windows specific (0x00000010)
+            creationflags = 0x00000010 if sys.platform == "win32" else 0
+            subprocess.Popen([sys.executable, str(core_path)], creationflags=creationflags)
+            return json_response({"status": "ok", "message": "WebUI 已尝试在独立窗口中启动"})
+        except Exception as e:
+            logger.error(f"Failed to start WebUI: {e}", exc_info=True)
+            return json_response({"status": "error", "message": str(e)})
+
+    async def handle_start_cli(self):
+        try:
+            core_path = self.plugin_dir / "obscura_manager" / "server.py"
+            creationflags = 0x00000010 if sys.platform == "win32" else 0
+            subprocess.Popen([sys.executable, str(core_path), "--cli"], creationflags=creationflags)
+            return json_response({"status": "ok", "message": "CLI 已尝试在独立窗口中启动"})
+        except Exception as e:
+            logger.error(f"Failed to start CLI: {e}", exc_info=True)
+            return json_response({"status": "error", "message": str(e)})
         async for result in self._handle_forced_trigger(event, str(query)):
             yield result
 

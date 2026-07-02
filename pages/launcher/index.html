@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <title>Obscura Launcher</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --text: #1a1a1a;
+        --card-bg: #f9fafb;
+        --border: #e5e7eb;
+        --primary: #3b82f6;
+        --primary-hover: #2563eb;
+      }
+      [data-theme="dark"] {
+        --bg: #121212;
+        --text: #e5e5e5;
+        --card-bg: #1e1e1e;
+        --border: #333333;
+        --primary: #3b82f6;
+        --primary-hover: #60a5fa;
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+      }
+      .card {
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        max-width: 500px;
+        width: 100%;
+        text-align: center;
+      }
+      .btn {
+        display: inline-block;
+        width: 100%;
+        padding: 0.75rem 1.5rem;
+        margin-top: 1rem;
+        font-size: 1rem;
+        font-weight: 500;
+        color: #ffffff;
+        background-color: var(--primary);
+        border: none;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+      }
+      .btn:hover {
+        background-color: var(--primary-hover);
+      }
+      .btn:active {
+        transform: scale(0.98);
+      }
+      .btn:disabled {
+        background-color: #6b7280;
+        cursor: not-allowed;
+      }
+      .status {
+        margin-top: 1.5rem;
+        font-size: 0.875rem;
+        color: #9ca3af;
+        white-space: pre-wrap;
+      }
+      .title {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+      }
+      .desc {
+        color: #9ca3af;
+        margin-bottom: 2rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1 class="title">Obscura 启动器</h1>
+      <p class="desc">点击下方按钮可在后台唤起独立的 WebUI 或 CLI 终端窗口。即使关闭 AstrBot，独立的终端仍会保持运行。</p>
+      
+      <button id="btn-webui" class="btn">🚀 独立启动 WebUI 服务器</button>
+      <button id="btn-cli" class="btn" style="background-color: #10b981;">💻 独立启动交互式 CLI</button>
+      
+      <div id="status" class="status">等待操作...</div>
+    </div>
+
+    <script type="module">
+      const bridge = window.AstrBotPluginPage;
+      const statusEl = document.getElementById("status");
+      const btnWebUI = document.getElementById("btn-webui");
+      const btnCLI = document.getElementById("btn-cli");
+
+      // Theming sync
+      function render() {
+        // AstrBot SDK handles the data-theme attribute on <html> automatically
+      }
+      
+      try {
+        await bridge.ready();
+        render();
+        const off = bridge.onContext(render);
+        window.addEventListener("beforeunload", off);
+      } catch (err) {
+        statusEl.textContent = "未检测到 AstrBot 环境，这可能是在独立浏览器中打开的。";
+      }
+
+      async function startProcess(endpoint, btn) {
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "启动中...";
+        try {
+          // The endpoint uses the plugin name relative path. 
+          // Example: launcher/start_webui
+          const result = await bridge.apiPost("launcher/" + endpoint, {});
+          
+          if (result && result.status === "ok") {
+            statusEl.style.color = "#10b981";
+            statusEl.textContent = `[成功] ${result.message}\n请检查是否弹出了新的终端窗口。`;
+          } else {
+            statusEl.style.color = "#ef4444";
+            statusEl.textContent = `[失败] ${result ? result.message : "未知错误"}`;
+          }
+        } catch (error) {
+          statusEl.style.color = "#ef4444";
+          statusEl.textContent = `[异常] ${error.message}`;
+        } finally {
+          setTimeout(() => {
+            btn.textContent = originalText;
+            btn.disabled = false;
+          }, 2000);
+        }
+      }
+
+      btnWebUI.addEventListener("click", () => startProcess("start_webui", btnWebUI));
+      btnCLI.addEventListener("click", () => startProcess("start_cli", btnCLI));
+    </script>
+  </body>
+</html>
