@@ -21,8 +21,12 @@ async def get_status(request):
     return web.json_response(status)
 
 async def get_versions(request):
-    versions = await manager.get_versions(limit=10)
-    return web.json_response(versions)
+    try:
+        force = request.query.get("force", "").lower() == "true"
+        versions = await manager.get_versions(limit=10, force=force)
+        return web.json_response(versions)
+    except ValueError as e:
+        return web.json_response({"error": str(e)}, status=500)
 
 async def uninstall(request):
     if progress_state["is_installing"]:

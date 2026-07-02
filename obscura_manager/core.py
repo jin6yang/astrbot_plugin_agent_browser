@@ -18,6 +18,9 @@ GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
 GH_PROXY_URL = "https://ghproxy.net/"
 
 class ObscuraManager:
+    _versions_cache = []
+    _versions_cache_time = 0
+
     def __init__(self, base_dir: Optional[Path] = None):
         self.base_dir = base_dir if base_dir else Path(os.getcwd())
         self.obscura_dir = self.base_dir / "obscura"
@@ -30,12 +33,24 @@ class ObscuraManager:
 
     def get_local_status(self) -> Dict[str, Any]:
         """Returns the local installation status including integrity check."""
-        if not self.manifest_path.exists() or not self.obscura_dir.exists():
+        executable = self._get_executable_path()
+        has_executable = executable.exists()
+        has_manifest = self.manifest_path.exists()
+
+        if not has_executable and not has_manifest:
             return {
                 "installed": False,
                 "version": None,
                 "status": "not_installed",
                 "message": "未安装"
+            }
+
+        if has_executable and not has_manifest:
+            return {
+                "installed": True,
+                "version": "unknown",
+                "status": "missing_manifest",
+                "message": "清单文件丢失"
             }
 
         try:
@@ -87,28 +102,42 @@ class ObscuraManager:
             "version": manifest.get("version"),
             "status": "ok",
             "message": "正常运行",
-            "install_time": manifest.get("install_time")
+            "install_time": manifest.get("install_time"),
+            "platform": manifest.get("platform", "unknown")
         }
 
-    async def get_versions(self, limit: int = 5) -> List[Dict[str, Any]]:
-        """Fetch latest releases from GitHub."""
+    async def get_versions(self, limit: int = 5, force: bool = False) -> List[Dict[str, Any]]:
+        """Fetch latest releases from GitHub, with caching. Use force=True to bypass cache."""
+        import time
+        now = time.time()
+        
+        if not force and ObscuraManager._versions_cache and (now - ObscuraManager._versions_cache_time) < 43200:
+            return ObscuraManager._versions_cache[:limit]
+            
         async with aiohttp.ClientSession() as session:
             try:
                 async with session.get(GITHUB_API_URL, timeout=10) as resp:
                     resp.raise_for_status()
                     data = await resp.json()
                     results = []
-                    for release in data[:limit]:
+                    for release in data:
                         results.append({
                             "version": release.get("tag_name"),
                             "name": release.get("name"),
                             "published_at": release.get("published_at"),
                             "assets": release.get("assets", [])
                         })
-                    return results
+                    ObscuraManager._versions_cache = results
+                    ObscuraManager._versions_cache_time = now
+                    return results[:limit]
             except Exception as e:
                 logger.error(f"获取版本列表失败: {e}")
-                return []
+                if not ObscuraManager._versions_cache:
+                    error_msg = str(e)
+                    if "rate limit" in error_msg.lower() or "403" in error_msg:
+                        raise ValueError("github_rate_limit")
+                    raise ValueError("network_timeout")
+                return ObscuraManager._versions_cache[:limit]
 
     async def get_latest_version(self) -> Optional[str]:
         versions = await self.get_versions(limit=1)
@@ -116,8 +145,8 @@ class ObscuraManager:
             return versions[0]["version"]
         return None
 
-    def _match_asset(self, assets: List[Dict[str, Any]]) -> Optional[str]:
-        """Find the correct asset URL for the current OS."""
+    def _match_asset(self, assets: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Find the correct asset for the current OS."""
         sys_os = platform.system().lower()
         arch = platform.machine().lower()
 
@@ -139,13 +168,13 @@ class ObscuraManager:
         for asset in assets:
             name = asset.get("name", "").lower()
             if name.endswith(".zip") and os_key in name and arch_key in name:
-                return asset.get("browser_download_url")
+                return asset
 
         # Fallback 1: Just OS key
         for asset in assets:
             name = asset.get("name", "").lower()
             if name.endswith(".zip") and os_key in name:
-                return asset.get("browser_download_url")
+                return asset
 
         return None
 
@@ -160,9 +189,14 @@ class ObscuraManager:
         if not target_release:
             return {"success": False, "message": f"找不到版本: {version}"}
 
-        download_url = self._match_asset(target_release["assets"])
-        if not download_url:
+        matched_asset = self._match_asset(target_release["assets"])
+        if not matched_asset:
             return {"success": False, "message": f"在版本 {version} 中找不到适合当前系统的发布包。"}
+
+        download_url = matched_asset.get("browser_download_url")
+        asset_name = matched_asset.get("name", "")
+        # Remove "obscura-" and ".zip" to get the platform string (e.g. windows-amd64)
+        platform_info = asset_name.replace("obscura-", "").replace(".zip", "")
 
         if use_proxy:
             download_url = f"{GH_PROXY_URL}{download_url}"
@@ -220,6 +254,15 @@ class ObscuraManager:
                     shutil.move(str(item), str(self.obscura_dir))
                 subfolder.rmdir()
                 
+            # Remove obscura-worker since it's not needed by this plugin
+            for worker_file in ["obscura-worker", "obscura-worker.exe"]:
+                wf = self.obscura_dir / worker_file
+                if wf.exists() and wf.is_file():
+                    try:
+                        wf.unlink()
+                    except Exception:
+                        pass
+                
         except Exception as e:
             if zip_path.exists():
                 zip_path.unlink()
@@ -250,7 +293,8 @@ class ObscuraManager:
         manifest = {
             "version": version,
             "install_time": datetime.utcnow().isoformat() + "Z",
-            "executable_sha256": current_hash
+            "executable_sha256": current_hash,
+            "platform": platform_info
         }
         with open(self.manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, indent=2, ensure_ascii=False)
@@ -261,8 +305,28 @@ class ObscuraManager:
         return {"success": True, "message": f"成功安装 {version}"}
 
     def uninstall(self) -> bool:
-        """Removes the obscura directory."""
-        if self.obscura_dir.exists():
-            shutil.rmtree(self.obscura_dir, ignore_errors=True)
-            return True
-        return False
+        """Removes the obscura binaries and manifest."""
+        if not self.obscura_dir.exists():
+            return False
+            
+        success = False
+        
+        # Remove obscura binaries
+        for file_name in ["obscura", "obscura.exe", "obscura-worker", "obscura-worker.exe"]:
+            file_path = self.obscura_dir / file_name
+            if file_path.exists() and file_path.is_file():
+                try:
+                    file_path.unlink()
+                    success = True
+                except Exception:
+                    pass
+        
+        # Remove manifest file
+        if self.manifest_path.exists():
+            try:
+                self.manifest_path.unlink()
+                success = True
+            except Exception:
+                pass
+                
+        return success

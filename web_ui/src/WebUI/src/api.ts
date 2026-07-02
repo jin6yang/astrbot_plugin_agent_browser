@@ -6,9 +6,17 @@ export async function fetchStatus() {
   return res.json();
 }
 
-export async function fetchVersions() {
-  const res = await fetch(`${API_BASE}/versions`);
-  if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+export async function fetchVersions(force?: boolean) {
+  const url = force ? `${API_BASE}/versions?force=true` : `${API_BASE}/versions`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    let errStr = "Failed to fetch";
+    try {
+      const data = await res.json();
+      if (data.error) errStr = data.error;
+    } catch (e) {}
+    throw new Error(errStr);
+  }
   return res.json();
 }
 

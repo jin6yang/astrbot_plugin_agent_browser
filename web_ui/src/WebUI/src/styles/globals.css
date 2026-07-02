@@ -7,34 +7,56 @@
   --color-primary-200: #bccfff;
   --color-primary-300: #8eb1ff;
   --color-primary-400: #5c8aff;
-  --color-primary-500: #366ceb;
+  --color-primary-500: #2653bf;
   --color-primary-600: #1c419a;
   --color-primary-700: #17327d;
   --color-primary-800: #162a66;
   --color-primary-900: #172650;
   --color-primary-950: #0f162e;
-  
+
   --color-primary: var(--color-primary-500);
 }
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --primary: #366ceb;
+  --primary: #2653bf;
   --primary-foreground: #ffffff;
-  --accent: #366ceb;
+  --accent: #2653bf;
   --accent-foreground: #ffffff;
+  --glare-center: 0.3;
+  --glare-mid: 0.1;
+  --glare-tail: 0.02;
+  --icon-shadow: rgba(0, 0, 0, 0.3);
+  --icon-ambient-glow: rgba(255, 255, 255, 0);
 }
 
 .dark {
-  --primary: #1c419a;
-  --primary-foreground: #ffffff;
-  --accent: #1c419a;
-  --accent-foreground: #ffffff;
+  --primary: #b6ccf7;
+  --primary-foreground: #1c419a; /* Darker text on light-blue background for contrast */
+  --accent: #b6ccf7;
+  --accent-foreground: #1c419a;
+  --glare-center: 0.1;
+  --glare-mid: 0.03;
+  --glare-tail: 0.005;
+  --icon-shadow: rgba(0, 0, 0, 0.95);
+  --icon-ambient-glow: rgba(255, 255, 255, 0.35);
 }
 
-html, body {
+html,
+body {
   min-height: 100vh;
   background-color: var(--color-background);
   color: var(--color-foreground);
+}
+
+@font-face {
+  font-family: "Josefin Sans";
+  src: url("../assets/fonts/JosefinSans-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+}
+
+.font-josefin {
+  font-family: "Josefin Sans", sans-serif;
 }

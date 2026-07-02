@@ -227,6 +227,9 @@ _conf_schema-OLD.json
 _conf_schema-嵌套示例.json
 README - 模版.md
 
+obscura/obscura.exe
+obscura/obscura_manifest.json
+
 # Web UI Docs
 # see other .gitignore
 
