@@ -305,6 +305,8 @@ class ObscuraAgentBrowserPlugin(Star):
             yield event.plain_result("Obscura 显式搜索命令当前已在配置中禁用。")
             event.stop_event()
             return
+        async for result in self._handle_forced_trigger(event, str(query)):
+            yield result
 
     def _generate_launcher_scripts(self):
         """Generate independent .bat and .sh launcher scripts for WebUI and CLI"""
@@ -383,8 +385,6 @@ class ObscuraAgentBrowserPlugin(Star):
         except Exception as e:
             logger.error(f"Failed to start CLI: {e}", exc_info=True)
             return json_response({"status": "error", "message": str(e)})
-        async for result in self._handle_forced_trigger(event, str(query)):
-            yield result
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=10)
     async def search_prefix_listener(self, event: AstrMessageEvent):
