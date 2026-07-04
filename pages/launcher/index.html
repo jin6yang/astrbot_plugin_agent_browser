@@ -69,11 +69,48 @@
         background-color: #6b7280;
         cursor: not-allowed;
       }
-      .status {
-        margin-top: 1.5rem;
-        font-size: 0.875rem;
-        color: #9ca3af;
+      .toast {
+        position: fixed;
+        bottom: 2rem;
+        left: 50%;
+        transform: translateX(-50%) translateY(100px);
+        opacity: 0;
+        background-color: #333333;
+        color: #ffffff;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+        pointer-events: none;
+        z-index: 1000;
         white-space: pre-wrap;
+        text-align: center;
+      }
+      .toast.show {
+        transform: translateX(-50%) translateY(0);
+        opacity: 1;
+      }
+      .toast.success { background-color: #10b981; }
+      .toast.error { background-color: #ef4444; }
+      .alert {
+        background-color: #fef2f2;
+        color: #991b1b;
+        border: 1px solid #f87171;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        text-align: center;
+        max-width: 500px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      [data-theme="dark"] .alert {
+        background-color: #450a0a;
+        color: #fca5a5;
+        border-color: #7f1d1d;
+      }
+      .hidden {
+        display: none !important;
       }
       .title {
         font-size: 1.5rem;
@@ -87,8 +124,11 @@
     </style>
   </head>
   <body>
-    <div class="card">
-      <img src="./icon-512.png" alt="Obscura Logo" class="mx-auto w-32 h-32 mb-6">
+    <div class="flex flex-col items-center justify-center w-full max-w-[500px]">
+      <div id="alert" class="alert hidden"></div>
+      
+      <div class="card">
+        <img src="./icon-512.png" alt="Obscura Logo" class="mx-auto w-32 h-32 mb-6">
       
       <button id="btn-webui" class="btn">
         <img src="./planet_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg" alt="planet" class="w-5 h-5">
@@ -99,12 +139,14 @@
         CLI
       </button>
       
-      <div id="status" class="status">等待操作...</div>
     </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
 
     <script type="module">
       const bridge = window.AstrBotPluginPage;
-      const statusEl = document.getElementById("status");
+      const toastEl = document.getElementById("toast");
       const btnWebUI = document.getElementById("btn-webui");
       const btnCLI = document.getElementById("btn-cli");
 
@@ -113,13 +155,26 @@
         // AstrBot SDK handles the data-theme attribute on <html> automatically
       }
       
+      let toastTimeout;
+      function showToast(message, type = 'success') {
+        toastEl.textContent = message;
+        toastEl.className = 'toast show ' + type;
+        
+        clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(() => {
+          toastEl.classList.remove('show');
+        }, 3000);
+      }
+
       try {
         await bridge.ready();
         render();
         const off = bridge.onContext(render);
         window.addEventListener("beforeunload", off);
       } catch (err) {
-        statusEl.textContent = "未检测到 AstrBot 环境，这可能是在独立浏览器中打开的。";
+        const alertEl = document.getElementById("alert");
+        alertEl.textContent = "未检测到 AstrBot 环境，这可能是在独立浏览器中打开的。";
+        alertEl.classList.remove("hidden");
       }
 
       async function startProcess(endpoint, btn) {
@@ -138,15 +193,12 @@
           const result = await bridge.apiPost("launcher/" + endpoint, {});
           
           if (result && result.status === "ok") {
-            statusEl.style.color = "#10b981";
-            statusEl.textContent = `[成功] ${result.message}\n请检查是否弹出了新的终端窗口。`;
+            showToast(`[成功] ${result.message}\n请检查是否弹出了新的终端窗口。`, "success");
           } else {
-            statusEl.style.color = "#ef4444";
-            statusEl.textContent = `[失败] ${result ? result.message : "未知错误"}`;
+            showToast(`[失败] ${result ? result.message : "未知错误"}`, "error");
           }
         } catch (error) {
-          statusEl.style.color = "#ef4444";
-          statusEl.textContent = `[异常] ${error.message}`;
+          showToast(`[异常] ${error.message}`, "error");
         } finally {
           setTimeout(() => {
             btn.innerHTML = originalHTML;
