@@ -92,8 +92,8 @@ export default function SettingsDialog({
                 </div>
                 <Select
                   className="max-w-xs w-32"
-                  value={lang}
-                  onChange={(key: any) => setLang(key)}
+                  selectedKey={lang}
+                  onSelectionChange={(key: any) => setLang(key)}
                 >
                   <Select.Trigger className="border border-black/10 dark:border-white/10 bg-default-100 hover:bg-default-200 transition-colors">
                     <Select.Value />
@@ -118,8 +118,8 @@ export default function SettingsDialog({
                 </div>
                 <Select
                   className="max-w-xs w-32"
-                  value={theme}
-                  onChange={(key: any) => setTheme(key)}
+                  selectedKey={theme}
+                  onSelectionChange={(key: any) => setTheme(key)}
                 >
                   <Select.Trigger className="border border-black/10 dark:border-white/10 bg-default-100 hover:bg-default-200 transition-colors">
                     <Select.Value />
