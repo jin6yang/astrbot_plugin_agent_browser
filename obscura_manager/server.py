@@ -81,7 +81,16 @@ async def index(request):
     index_file = dist_dir / "index.html"
     if not index_file.exists():
         return web.Response(text="WebUI 还没有构建 (dist 目录不存在)。请先执行 npm run build。", content_type='text/html')
-    return web.FileResponse(index_file)
+    
+    with open(index_file, "r", encoding="utf-8") as f:
+        html_content = f.read()
+    
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    }
+    return web.Response(text=html_content, content_type="text/html", headers=headers)
 
 def setup_routes(app):
     app.router.add_get('/api/status', get_status)
