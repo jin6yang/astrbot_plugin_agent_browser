@@ -10,16 +10,16 @@
         --text: #1a1a1a;
         --card-bg: #f9fafb;
         --border: #e5e7eb;
-        --primary: #3b82f6;
-        --primary-hover: #2563eb;
+        --primary: #4984b8;
+        --primary-hover: #3b719f;
       }
       [data-theme="dark"] {
         --bg: #121212;
         --text: #e5e5e5;
         --card-bg: #1e1e1e;
         --border: #333333;
-        --primary: #3b82f6;
-        --primary-hover: #60a5fa;
+        --primary: #6da2d0;
+        --primary-hover: #8cb6dd;
       }
       body {
         background: var(--bg);
@@ -43,7 +43,10 @@
         text-align: center;
       }
       .btn {
-        display: inline-block;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 0.5rem;
         width: 100%;
         padding: 0.75rem 1.5rem;
         margin-top: 1rem;
@@ -85,11 +88,16 @@
   </head>
   <body>
     <div class="card">
-      <h1 class="title">Obscura 启动器</h1>
-      <p class="desc">点击下方按钮可在后台唤起独立的 WebUI 或 CLI 终端窗口。即使关闭 AstrBot，独立的终端仍会保持运行。</p>
+      <img src="./icon-512.png" alt="Obscura Logo" class="mx-auto w-32 h-32 mb-6">
       
-      <button id="btn-webui" class="btn">🚀 独立启动 WebUI 服务器</button>
-      <button id="btn-cli" class="btn" style="background-color: #10b981;">💻 独立启动交互式 CLI</button>
+      <button id="btn-webui" class="btn">
+        <img src="./planet_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg" alt="planet" class="w-5 h-5">
+        WebUI
+      </button>
+      <button id="btn-cli" class="btn">
+        <img src="./terminal_24dp_E3E3E3_FILL1_wght400_GRAD0_opsz24.svg" alt="terminal" class="w-5 h-5">
+        CLI
+      </button>
       
       <div id="status" class="status">等待操作...</div>
     </div>
