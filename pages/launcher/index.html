@@ -123,9 +123,15 @@
       }
 
       async function startProcess(endpoint, btn) {
-        const originalText = btn.textContent;
+        const originalHTML = btn.innerHTML;
         btn.disabled = true;
-        btn.textContent = "启动中...";
+        const img = btn.querySelector('img');
+        if (img) {
+          btn.innerHTML = img.outerHTML + ' 启动中...';
+        } else {
+          btn.textContent = "启动中...";
+        }
+        
         try {
           // The endpoint uses the plugin name relative path. 
           // Example: launcher/start_webui
@@ -143,7 +149,7 @@
           statusEl.textContent = `[异常] ${error.message}`;
         } finally {
           setTimeout(() => {
-            btn.textContent = originalText;
+            btn.innerHTML = originalHTML;
             btn.disabled = false;
           }, 2000);
         }
