@@ -312,24 +312,23 @@ class ObscuraAgentBrowserPlugin(Star):
         """Generate independent .bat and .sh launcher scripts for WebUI and CLI"""
         python_exe = sys.executable
         plugin_root = self.plugin_dir
-        core_path = plugin_root / "obscura_manager" / "server.py"
         
         # WebUI scripts
         webui_bat = plugin_root / "launch_webui.bat"
-        webui_bat.write_text(f'@echo off\n"{python_exe}" "{core_path}"\npause\n', encoding='utf-8')
+        webui_bat.write_text(f'@echo off\ncd /d "{plugin_root}"\n"{python_exe}" -m obscura_manager.server\npause\n', encoding='utf-8')
         
         webui_sh = plugin_root / "launch_webui.sh"
-        webui_sh.write_text(f'#!/bin/bash\n"{python_exe}" "{core_path}"\n', encoding='utf-8')
+        webui_sh.write_text(f'#!/bin/bash\ncd "{plugin_root}"\n"{python_exe}" -m obscura_manager.server\n', encoding='utf-8')
         try: os.chmod(webui_sh, 0o755)
         except Exception: pass
 
         # CLI scripts (Assuming server.py can take --cli or similar, or just distinct names)
         # We'll just pass --cli for now, even if it ignores it, it's a good placeholder.
         cli_bat = plugin_root / "launch_cli.bat"
-        cli_bat.write_text(f'@echo off\n"{python_exe}" "{core_path}" --cli\npause\n', encoding='utf-8')
+        cli_bat.write_text(f'@echo off\ncd /d "{plugin_root}"\n"{python_exe}" -m obscura_manager.server --cli\npause\n', encoding='utf-8')
         
         cli_sh = plugin_root / "launch_cli.sh"
-        cli_sh.write_text(f'#!/bin/bash\n"{python_exe}" "{core_path}" --cli\n', encoding='utf-8')
+        cli_sh.write_text(f'#!/bin/bash\ncd "{plugin_root}"\n"{python_exe}" -m obscura_manager.server --cli\n', encoding='utf-8')
         try: os.chmod(cli_sh, 0o755)
         except Exception: pass
 
@@ -367,10 +366,9 @@ class ObscuraAgentBrowserPlugin(Star):
 
     async def handle_start_webui(self):
         try:
-            core_path = self.plugin_dir / "obscura_manager" / "server.py"
             # CREATE_NEW_CONSOLE is Windows specific (0x00000010)
             creationflags = 0x00000010 if sys.platform == "win32" else 0
-            subprocess.Popen([sys.executable, str(core_path)], creationflags=creationflags)
+            subprocess.Popen([sys.executable, "-m", "obscura_manager.server"], cwd=str(self.plugin_dir), creationflags=creationflags)
             return json_response({"status": "ok", "message": "WebUI 已尝试在独立窗口中启动"})
         except Exception as e:
             logger.error(f"Failed to start WebUI: {e}", exc_info=True)
@@ -378,9 +376,8 @@ class ObscuraAgentBrowserPlugin(Star):
 
     async def handle_start_cli(self):
         try:
-            core_path = self.plugin_dir / "obscura_manager" / "server.py"
             creationflags = 0x00000010 if sys.platform == "win32" else 0
-            subprocess.Popen([sys.executable, str(core_path), "--cli"], creationflags=creationflags)
+            subprocess.Popen([sys.executable, "-m", "obscura_manager.server", "--cli"], cwd=str(self.plugin_dir), creationflags=creationflags)
             return json_response({"status": "ok", "message": "CLI 已尝试在独立窗口中启动"})
         except Exception as e:
             logger.error(f"Failed to start CLI: {e}", exc_info=True)
