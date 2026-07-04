@@ -103,6 +103,7 @@ export default function App() {
     fetchVers = true,
     forceVers = false,
   ) => {
+    let success = true;
     try {
       if (showLoading && !isInstalling) setLoading(true);
       setBackendError(false);
@@ -114,7 +115,10 @@ export default function App() {
           const vers = await fetchVersions(forceVers);
           setVersions(vers);
         } catch (e: any) {
-          if (showLoading) {
+          success = false;
+          if (forceVers) {
+            throw e;
+          } else if (showLoading) {
             if (e.message === "github_rate_limit") {
               toast("达到检查上限", {
                 description: "检查更新过于频繁，已触发 GitHub 速率限制，请稍后再试。",
@@ -137,12 +141,31 @@ export default function App() {
           }
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Backend connection failed:", e);
       setBackendError(true);
+      success = false;
+      if (forceVers) throw e;
     } finally {
       if (showLoading) setLoading(false);
     }
+    return success;
+  };
+
+  const handleCheckUpdate = () => {
+    toast.promise(loadData(false, true, true), {
+      loading: "正在检查更新...",
+      success: "检查完毕，版本状态及版本列表已刷新。",
+      error: (e: any) => {
+        if (e.message === "github_rate_limit") {
+          return "检查更新过于频繁，已触发 GitHub 速率限制，请稍后再试。";
+        } else if (e.message === "network_timeout") {
+          return "获取云端版本列表超时，请检查网络环境。";
+        } else {
+          return "获取云端版本列表发生错误：" + e.message;
+        }
+      },
+    });
   };
 
   useEffect(() => {
@@ -533,7 +556,7 @@ export default function App() {
                   <Button
                     color="primary"
                     variant="tertiary"
-                    onPress={() => loadData(true, true, true)}
+                    onPress={handleCheckUpdate}
                   >
                     <Cloud />
                     检查更新
