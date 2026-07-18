@@ -21,11 +21,38 @@
         "default": true,
         "hint": "比如 /search 和 /搜索"
       },
+      "auto_search_policy": {
+        "description": "搜索策略",
+        "type": "string",
+        "default": "tool",
+        "options": ["tool", "always"],
+        "labels": ["LLM 自主判断", "总是执行"],
+        "hint": "总是执行：会让普通消息也执行一次浏览器任务"
+      },
+      "max_urls_per_request": {
+        "description": "单次最多处理的 URL 数",
+        "type": "int",
+        "default": 3
+      }
+    }
+  },
+  "config_force_trigger": {
+    "description": "🕹️ 强制触发",
+    "type": "object",
+    "items": {
       "enable_force_prefixes": {
         "description": "启用强制触发词",
         "type": "bool",
-        "default": true,
+        "default": false,
         "hint": "关闭本选项可阻止插件被除内部指令以外的方式强制触发，使用本插件的时机完全由 [主 Bot] 判断"
+      },
+      "force_trigger_mode": {
+        "description": "处理模式",
+        "type": "string",
+        "default": "main_bot",
+        "options": ["main_bot", "direct_reply"],
+        "labels": ["✨ Bot 框架", "🎯 仅插件"],
+        "hint": "[Bot 框架] 模式：强制插入搜索结果内容到 {主 Bot} 的提示词 | [仅插件] 模式：绕过 {主 Bot} 使用单独的 LLM 总结并回复"
       },
       "force_prefixes": {
         "description": "触发词列表",
@@ -37,33 +64,8 @@
       }
     }
   },
-  "config_force_trigger": {
-    "description": "🕹️ 强制触发",
-    "type": "object",
-    "items": {
-      "force_trigger_mode": {
-        "description": "处理模式",
-        "type": "string",
-        "default": "main_bot",
-        "options": ["main_bot", "direct_reply"],
-        "hint": "main_bot 模式：强制插入搜索结果内容到 [主 Bot] 的提示词 | direct_reply 模式：绕过 [主 Bot] 使用单独的 LLM 总结并回复"
-      },
-      "auto_search_policy": {
-        "description": "搜索策略",
-        "type": "string",
-        "default": "tool",
-        "options": ["tool", "always"],
-        "hint": "always 会让普通消息也强制执行一次浏览器任务"
-      },
-      "max_urls_per_request": {
-        "description": "单次最多处理的 URL 数",
-        "type": "int",
-        "default": 3
-      }
-    }
-  },
   "config_main_bot": {
-    "description": "✨ main_bot 模式",
+    "description": "✨ Bot 框架 模式（非全局）",
     "type": "object",
     "items": {
       "forced_evidence_prompt_template": {
@@ -75,7 +77,7 @@
     }
   },
   "config_direct_reply": {
-    "description": "🎯 direct_reply 模式",
+    "description": "🎯 仅插件 模式（非全局）",
     "type": "object",
     "items": {
       "summary_provider_id": {
