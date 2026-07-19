@@ -27,6 +27,7 @@ from .models import (
 from .search_providers import (
     SearchProvider, 
     DuckDuckGoProvider, 
+    BingProvider,
     AnySearchProvider,
     ExaProvider,
     ParallelProvider,
@@ -509,9 +510,12 @@ class ObscuraSearchService:
             return PerplexityProvider(self.config)
         elif self.config.search_engine == "tavily_api":
             return TavilyProvider(self.config)
-        
+
         async def fetch_html(url: str) -> str:
             return await self.fetch(url, dump="html")
+
+        if self.config.search_engine == "bing_rss":
+            return BingProvider(self.config, html_fetcher=fetch_html)
         return DuckDuckGoProvider(self.config, html_fetcher=fetch_html)
 
     async def _enrich_results(self, results: list[SearchResult]) -> None:
