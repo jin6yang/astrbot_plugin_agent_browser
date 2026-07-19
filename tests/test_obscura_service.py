@@ -4,9 +4,9 @@ from pathlib import Path
 
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from obscura_service import (  # noqa: E402
+from astrbot_plugin_agent_browser.obscura_service import (  # noqa: E402
     ObscuraError,
     ObscuraSearchService,
     SearchConfig,
@@ -14,17 +14,19 @@ from obscura_service import (  # noqa: E402
     build_forced_task,
     build_search_url,
     config_from_mapping,
-    decode_duckduckgo_url,
     extract_forced_query,
     extract_http_urls,
     is_valid_forced_evidence_template,
     is_valid_summary_prompt_template,
     is_url_allowed,
-    parse_duckduckgo_results,
     parse_page_evidence,
     remove_http_urls,
     resolve_obscura_path,
     resolve_summary_prompt_template,
+)
+from astrbot_plugin_agent_browser.search_providers.duckduckgo import (  # noqa: E402
+    decode_duckduckgo_url,
+    parse_duckduckgo_results,
 )
 
 
@@ -91,11 +93,14 @@ class ObscuraServiceTests(unittest.TestCase):
 
         results = parse_duckduckgo_results(html, limit=5)
 
-        self.assertEqual(len(results), 2)
+        # 解析层不再做 URL 安全过滤（过滤已上移到 ObscuraSearchService.search），
+        # 因此内网 URL 的结果也会原样返回。
+        self.assertEqual(len(results), 3)
         self.assertEqual(results[0].title, "Example One")
         self.assertEqual(results[0].url, "https://example.com/one")
         self.assertEqual(results[0].snippet, "First result snippet.")
         self.assertEqual(results[1].url, "https://example.org/two")
+        self.assertEqual(results[2].url, "http://127.0.0.1/private")
 
     def test_build_search_url(self):
         self.assertEqual(
@@ -106,10 +111,14 @@ class ObscuraServiceTests(unittest.TestCase):
     def test_config_trigger_switches(self):
         config = config_from_mapping(
             {
-                "enable_force_commands": False,
-                "enable_force_prefixes": False,
-                "auto_search_policy": "always",
-                "force_trigger_mode": "direct_reply",
+                "config_general": {
+                    "enable_force_commands": False,
+                    "enable_force_prefixes": False,
+                },
+                "config_force_trigger": {
+                    "auto_search_policy": "always",
+                    "force_trigger_mode": "direct_reply",
+                },
             }
         )
 
@@ -126,16 +135,20 @@ class ObscuraServiceTests(unittest.TestCase):
             prompt_file.write_text("FILE {query} {evidence}", encoding="utf-8")
             config = config_from_mapping(
                 {
-                    "summary_prompt_file": "prompts/summary.md",
-                    "summary_prompt_template": "CONFIG {query} {evidence}",
-                    "summary_prompt_source": "file",
+                    "config_direct_reply": {
+                        "summary_prompt_file": "prompts/summary.md",
+                        "summary_prompt_template": "CONFIG {query} {evidence}",
+                        "summary_prompt_source": "file",
+                    }
                 }
             )
             config_source = config_from_mapping(
                 {
-                    "summary_prompt_file": "prompts/summary.md",
-                    "summary_prompt_template": "CONFIG {query} {evidence}",
-                    "summary_prompt_source": "config",
+                    "config_direct_reply": {
+                        "summary_prompt_file": "prompts/summary.md",
+                        "summary_prompt_template": "CONFIG {query} {evidence}",
+                        "summary_prompt_source": "config",
+                    }
                 }
             )
 
@@ -151,8 +164,10 @@ class ObscuraServiceTests(unittest.TestCase):
             prompt_file.write_text("invalid", encoding="utf-8")
             config = config_from_mapping(
                 {
-                    "summary_prompt_file": "summary.md",
-                    "summary_prompt_template": "also invalid",
+                    "config_direct_reply": {
+                        "summary_prompt_file": "summary.md",
+                        "summary_prompt_template": "also invalid",
+                    }
                 }
             )
 
@@ -162,9 +177,11 @@ class ObscuraServiceTests(unittest.TestCase):
     def test_media_config_replaces_off_with_enable_switch(self):
         config = config_from_mapping(
             {
-                "enable_media_extraction": False,
-                "media_extract_mode": "off",
-                "image_caption_provider_id": "vision",
+                "config_media": {
+                    "enable_media_extraction": False,
+                    "media_extract_mode": "off",
+                    "image_caption_provider_id": "vision",
+                }
             }
         )
 
@@ -253,7 +270,9 @@ class ObscuraServiceAsyncTests(unittest.IsolatedAsyncioTestCase):
 
         service = FakeService(SearchConfig(enable_media_extraction=False))
         content, page = await service._fetch_result_evidence(
-            SearchResult(title="Example", url="https://example.com")
+            SearchResult(title="Example", url="https://example.com"),
+            needs_content=True,
+            needs_evidence=False,
         )
 
         self.assertEqual(content, "Visible body text")
@@ -270,7 +289,9 @@ class ObscuraServiceAsyncTests(unittest.IsolatedAsyncioTestCase):
             SearchConfig(enable_media_extraction=False, summary_focus="visual_design")
         )
         _, page = await service._fetch_result_evidence(
-            SearchResult(title="Example", url="https://example.com")
+            SearchResult(title="Example", url="https://example.com"),
+            needs_content=False,
+            needs_evidence=True,
         )
 
         self.assertIn("Heading", page.headings)
