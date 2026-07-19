@@ -44,7 +44,7 @@ Astrbot 插件 - Obscura 浏览器代理
 - 📄 **深度网页解析**：不仅能够提取网页正文，还能提取 OpenGraph 元数据、标题层级、导航标签，以及基础的 CSS 颜色和字体 Token。
 - 👁️ **媒体与视觉支持**：支持提取网页图片 URL、替代文本 (alt text) 和图注。配置好描述模型后，可以尝试理解网页上的图片内容。
 - 🛡️ **安全机制**：默认拦截非 HTTP 协议 URL、localhost 以及私有/保留 IP，保障宿主机网络安全。
-- 🔮 **Web UI (正在开发中...)**: 支持通过 Web UI 管理 Obscura.
+- 🔮 **Web UI**: 支持通过 Web UI 管理 Obscura 的环境.
 
 ## 安装
 
@@ -71,7 +71,7 @@ Astrbot 插件 - Obscura 浏览器代理
 - **parallel API**
 - **Perplexity API**
 - **Tavily API**（免费）
-- **自定义搜索 URL**
+- **自定义搜索 URL**（可自定义）
 
 ## 插件配置说明
 
@@ -81,26 +81,28 @@ Astrbot 插件 - Obscura 浏览器代理
 
 - ⚙️ 通用
 - 🕹️ 强制触发
-- ✨🎯 强制触发模式配置
+- ✨🎯 强制触发模式相关详细配置
 - 🌐 浏览器操作和搜索
 - 🖼️ 网页媒体
 - 🚀 高级
 
 以上具体请查看 AstrBot 插件配置中的说明
 
-### Obscura 二进制文件
+### 下载 Obscura 二进制文件
+
+> 此为安装 Obscura 浏览器的相关说明
 
 #### Web UI
 
-正在开发，将于之后推出......
+按 UI 指示操作
 
 #### CLI
 
-正在开发，将于之后推出......
+按文字提示操作
 
 #### 手动
 
-首先，你需要下载 Obscura:
+首先，你需要手动下载 Obscura:
 
 [Releases · Obscura](https://github.com/h4ckf0r0day/obscura/releases)
 
@@ -154,6 +156,10 @@ Astrbot 插件 - Obscura 浏览器代理
 Windows: `%USERPROFILE%\.astrbot\data\plugins\astrbot_plugin_agent_browser`
 
 Linux / macOS / OpenHarmony: 请根据 AstrBot 部署方式查找对应的目录
+
+## Q/A
+
+如果本插件的 WebUI 无法正常与后端通信，一般重启 AstrBot 的后端就可以解决。
 
 ## 感谢
 
