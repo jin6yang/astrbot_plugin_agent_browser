@@ -284,11 +284,14 @@ export default function App() {
     return <LoadingScreen isAppReady={!loading} onFinish={() => setShowLoadingScreen(false)} />;
   }
 
+  const workerStatus: string | undefined = status?.worker?.status;
+  const isWorkerAbnormal = Boolean(workerStatus && workerStatus !== "ok");
   const isTampered =
     status?.status === "sha256_mismatch" ||
     status?.status === "manifest_error" ||
     status?.status === "missing_executable" ||
-    status?.status === "missing_manifest";
+    status?.status === "missing_manifest" ||
+    isWorkerAbnormal;
   const isInstalled = status?.installed;
   const currentVersion = status?.version;
   const latestVersion = versions.length > 0 ? versions[0].version : null;
