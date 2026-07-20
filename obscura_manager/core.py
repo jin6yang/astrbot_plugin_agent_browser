@@ -84,6 +84,13 @@ class ObscuraManager:
         has_manifest = self.manifest_path.exists()
 
         if not has_executable and not has_manifest:
+            if self._get_worker_path().exists():
+                return {
+                    "installed": False,
+                    "version": None,
+                    "status": "missing_executable",
+                    "message": "检测到残留的 obscura-worker，但主程序和清单缺失，安装不完整，建议重新安装"
+                }
             return {
                 "installed": False,
                 "version": None,

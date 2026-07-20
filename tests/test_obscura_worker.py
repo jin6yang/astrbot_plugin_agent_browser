@@ -396,5 +396,21 @@ class ManagerWorkerStatusTests(unittest.TestCase):
             self.assertEqual(status["worker"]["status"], "sha256_mismatch")
 
 
+    def test_worker_only_residue_is_abnormal(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            obscura_dir = Path(tmpdir) / "obscura"
+            obscura_dir.mkdir(parents=True)
+            (obscura_dir / "obscura-worker.exe").write_bytes(b"worker-binary")
+
+            status = ObscuraManager(base_dir=Path(tmpdir)).get_local_status()
+            self.assertEqual(status["status"], "missing_executable")
+            self.assertIn("重新安装", status["message"])
+
+    def test_empty_dir_is_not_installed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            status = ObscuraManager(base_dir=Path(tmpdir)).get_local_status()
+            self.assertEqual(status["status"], "not_installed")
+
+
 if __name__ == "__main__":
     unittest.main()
