@@ -122,10 +122,10 @@
         "type": "string",
         "default": "duckduckgo_html",
         "options": [
-          "duckduckgo_html",
           "bing_rss",
-          "bocha_api",
+          "duckduckgo_html",
           "anysearch_api",
+          "bocha_api",
           "exa_api",
           "parallel_api",
           "perplexity_api",
@@ -150,7 +150,7 @@
         "description": "搜索结果数",
         "type": "int",
         "default": 5,
-        "hint": "使用浏览器打开网页和抓取内容需要耗费时间，且会消耗设备性能，但是 Obscura 很快很轻"
+        "hint": "使用浏览器打开网页和抓取内容需要耗费时间，且会消耗设备性能，虽然 Obscura 很快很轻，但是这个项目也要调整为适当的值，默认为 5"
       },
       "fetch_top_pages": {
         "description": "抓取搜索结果正文的数量",
@@ -185,7 +185,8 @@
         "type": "string",
         "default": "images",
         "options": ["images", "metadata_only"],
-        "hint": "images 模式会提取 HTML 中的 <img> 和 <source> 标签"
+        "labels": ["图片链接", "仅图片元数据"],
+        "hint": "[图片链接] 模式会提取 HTML 中的 <img> 和 <source> 标签"
       },
       "max_images_per_page": {
         "description": "单个网页图片提取数",
@@ -206,7 +207,7 @@
     "type": "object",
     "items": {
       "obscura_path": {
-        "description": "Obscura 浏览器二进制文件路径",
+        "description": "自定义 Obscura 浏览器二进制文件路径",
         "type": "string",
         "default": "",
         "hint": "为空时会优先使用插件目录下的 obscura 文件夹内的二进制文件（需命名为 obscura）, 如果不存在则会尝试在系统 PATH 中寻找"
