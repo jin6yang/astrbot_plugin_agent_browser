@@ -37,7 +37,7 @@
     }
   },
   "config_force_trigger": {
-    "description": "🕹️ 强制触发",
+    "description": "🕹️ 强制触发（通过内部指令或触发词）",
     "type": "object",
     "items": {
       "enable_force_prefixes": {
