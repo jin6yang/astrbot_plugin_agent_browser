@@ -516,6 +516,12 @@ class ObscuraSearchService:
 
         if self.config.search_engine == "bing_rss":
             return BingProvider(self.config, html_fetcher=fetch_html)
+        if self.config.search_engine == "custom":
+            return DuckDuckGoProvider(
+                self.config,
+                html_fetcher=fetch_html,
+                url_template=self.config.search_url_template,
+            )
         return DuckDuckGoProvider(self.config, html_fetcher=fetch_html)
 
     async def _enrich_results(self, results: list[SearchResult]) -> None:

@@ -8,6 +8,8 @@ from ..models import SearchResult, SearchResponse, SearchConfig, ObscuraError
 
 URL_TRAILING_CHARS = ".,;:!?)]}>，。！？；：、）】》」』”’"
 
+DUCKDUCKGO_HTML_URL_TEMPLATE = "https://html.duckduckgo.com/html/?q={query}"
+
 def clean_text(value: str) -> str:
     value = html.unescape(value or "")
     value = re.sub(r"\s+", " ", value)
@@ -113,16 +115,23 @@ def parse_duckduckgo_results(html_text: str, *, limit: int) -> list[SearchResult
     return results
 
 class DuckDuckGoProvider:
-    def __init__(self, config: SearchConfig, html_fetcher: Callable[[str], Awaitable[str]]) -> None:
+    def __init__(
+        self,
+        config: SearchConfig,
+        html_fetcher: Callable[[str], Awaitable[str]],
+        url_template: str | None = None,
+    ) -> None:
         self.config = config
         self.html_fetcher = html_fetcher
+        self.url_template = url_template
 
     async def search(self, query: str, *, num_results: int | None = None) -> SearchResponse:
         limit = max(1, min(num_results or self.config.result_count, self.config.result_count))
         from urllib.parse import quote_plus
         encoded = quote_plus(query.strip())
         raw = query.strip()
-        search_url = self.config.search_url_template.replace("{query}", encoded).replace("{query_encoded}", encoded).replace("{raw_query}", raw)
+        template = self.url_template or DUCKDUCKGO_HTML_URL_TEMPLATE
+        search_url = template.replace("{query}", encoded).replace("{query_encoded}", encoded).replace("{raw_query}", raw)
         
         try:
             search_html = await self.html_fetcher(search_url)
