@@ -24,6 +24,7 @@ from .models import (
     SearchResponse,
     SearchResult,
 )
+from .obscura_worker import ObscuraWorkerPool, resolve_obscura_worker_path
 from .search_providers import (
     SearchProvider, 
     DuckDuckGoProvider, 
@@ -82,6 +83,8 @@ def config_from_mapping(config: Mapping[str, Any] | None) -> SearchConfig:
         user_agent=str(advanced.get("user_agent", "") or "").strip(),
         stealth=_as_bool(advanced.get("stealth", False)),
         allow_private_urls=_as_bool(advanced.get("allow_private_urls", False)),
+        enable_worker_pool=_as_bool(advanced.get("enable_worker_pool", True)),
+        max_workers=max(1, _as_int(advanced.get("max_workers", 3), 3)),
     )
 
 
@@ -527,17 +530,49 @@ class ObscuraSearchService:
             )
         return DuckDuckGoProvider(self.config, html_fetcher=fetch_html)
 
+    def _create_worker_pool(self, fetch_count: int) -> ObscuraWorkerPool | None:
+        if not self.config.enable_worker_pool or fetch_count <= 0:
+            return None
+        if self.config.user_agent:
+            return None
+        obscura_path = resolve_obscura_path(self.config.obscura_path, base_dir=self.base_dir)
+        if not obscura_path:
+            return None
+        worker_path = resolve_obscura_worker_path(obscura_path)
+        if not worker_path:
+            return None
+        return ObscuraWorkerPool(
+            worker_path,
+            size=min(fetch_count, self.config.max_workers),
+            proxy=self.config.proxy,
+            stealth=self.config.stealth,
+            timeout=self.config.timeout_seconds,
+        )
+
     async def _enrich_results(self, results: list[SearchResult]) -> None:
         fetch_count = min(self.config.fetch_top_pages, len(results))
         if fetch_count <= 0:
             return
 
+        pool = self._create_worker_pool(fetch_count)
+        if pool is not None:
+            async with pool:
+                await self._gather_result_evidence(results, fetch_count, pool)
+        else:
+            await self._gather_result_evidence(results, fetch_count, None)
+
+    async def _gather_result_evidence(
+        self,
+        results: list[SearchResult],
+        fetch_count: int,
+        pool: ObscuraWorkerPool | None,
+    ) -> None:
         tasks = []
         for result in results[:fetch_count]:
             needs_content = not result.content
             needs_evidence = self.config.enable_media_extraction or self.config.summary_focus in {"visual_design", "site_overview"}
             if needs_content or needs_evidence:
-                tasks.append(self._fetch_result_evidence(result, needs_content=needs_content, needs_evidence=needs_evidence))
+                tasks.append(self._fetch_result_evidence(result, needs_content=needs_content, needs_evidence=needs_evidence, pool=pool))
 
         if not tasks:
             return
@@ -620,15 +655,27 @@ class ObscuraSearchService:
         await self._enrich_results(response.results)
         return response
 
-    async def _fetch_result_evidence(self, result: SearchResult, needs_content: bool, needs_evidence: bool) -> tuple[str, PageEvidence]:
+    async def _fetch_result_evidence(
+        self,
+        result: SearchResult,
+        needs_content: bool,
+        needs_evidence: bool,
+        pool: ObscuraWorkerPool | None = None,
+    ) -> tuple[str, PageEvidence]:
         if not is_url_allowed(result.url, allow_private_urls=self.config.allow_private_urls):
             raise ObscuraError(f"结果 URL 被安全策略拦截：{result.url}")
-        
+
+        if pool is not None:
+            try:
+                return await self._fetch_result_evidence_via_worker(result, needs_content, needs_evidence, pool)
+            except ObscuraError:
+                pass
+
         content = ""
         if needs_content:
             text = await self.fetch(result.url, dump="text")
             content = truncate_text(text, self.config.max_page_chars)
-            
+
         page_evidence = PageEvidence()
         if needs_evidence:
             try:
@@ -642,6 +689,31 @@ class ObscuraSearchService:
                 )
             except ObscuraError as exc:
                 page_evidence.description = f"Page metadata extraction failed: {exc}"
+        return content, page_evidence
+
+    async def _fetch_result_evidence_via_worker(
+        self,
+        result: SearchResult,
+        needs_content: bool,
+        needs_evidence: bool,
+        pool: ObscuraWorkerPool,
+    ) -> tuple[str, PageEvidence]:
+        content = ""
+        page_evidence = PageEvidence()
+        async with pool.acquire() as session:
+            await session.navigate(result.url)
+            if needs_content:
+                text = await session.dump_text()
+                content = truncate_text(text, self.config.max_page_chars)
+            if needs_evidence:
+                html_text = await session.dump_html()
+                page_evidence = parse_page_evidence(
+                    html_text,
+                    base_url=result.url,
+                    max_images=self.config.max_images_per_page,
+                    allow_private_urls=self.config.allow_private_urls,
+                    include_images=self.config.enable_media_extraction,
+                )
         return content, page_evidence
 
     async def fetch(self, url: str, *, dump: str = "text") -> str:

@@ -42,6 +42,8 @@ class SearchConfig:
     user_agent: str = ""
     stealth: bool = False
     allow_private_urls: bool = False
+    enable_worker_pool: bool = True
+    max_workers: int = 3
 
 @dataclass(slots=True)
 class ForcedTask:

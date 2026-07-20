@@ -228,6 +228,18 @@
         "default": false,
         "hint": "启用 Obscura 的特征隐匿模式，可用于反指纹识别和追踪器阻断"
       },
+      "enable_worker_pool": {
+        "description": "启用 obscura-worker 会话池",
+        "type": "bool",
+        "default": true,
+        "hint": "批量抓取时复用短期存活的 worker 进程以减少启动开销，任务结束即全部关闭；关闭则使用单进程抓取模式"
+      },
+      "max_workers": {
+        "description": "会话池最大 worker 数",
+        "type": "int",
+        "default": 3,
+        "hint": "worker 仅在批量抓取期间存活，用完即关；仅在启用会话池时生效"
+      },
       "allow_private_urls": {
         "description": "允许访问本地和内网资源",
         "type": "bool",
