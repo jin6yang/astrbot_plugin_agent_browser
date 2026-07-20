@@ -138,13 +138,13 @@
         "description": "搜索引擎 API Key",
         "type": "string",
         "default": "",
-        "hint": "选填，可以填写相应搜索引擎的 API 密钥"
+        "hint": "选填，可以填写相应搜索引擎的 API 密钥（仅对需要 API 的生效）"
       },
       "search_url_template": {
         "description": "搜索引擎 URL 模板",
         "type": "string",
         "default": "https://html.duckduckgo.com/html/?q={query}",
-        "hint": "选填，可以填写自定义搜索引擎的 URL 模板（仅对 custom 生效；duckduckgo_html / bing_rss 使用内置地址）"
+        "hint": "选填，可以填写自定义搜索引擎的 URL 模板（仅对 custom 生效）"
       },
       "result_count": {
         "description": "搜索结果数",
