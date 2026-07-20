@@ -31,6 +31,52 @@ class ObscuraManager:
             return self.obscura_dir / "obscura.exe"
         return self.obscura_dir / "obscura"
 
+    def _get_worker_path(self) -> Path:
+        if platform.system().lower() == "windows":
+            return self.obscura_dir / "obscura-worker.exe"
+        return self.obscura_dir / "obscura-worker"
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        sha256_hash = hashlib.sha256()
+        with open(path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        return sha256_hash.hexdigest()
+
+    def _get_worker_status(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
+        worker_path = self._get_worker_path()
+        if not worker_path.exists():
+            return {
+                "installed": False,
+                "status": "missing",
+                "message": "obscura-worker 缺失，将使用单进程模式，建议重新安装"
+            }
+
+        expected_hash = manifest.get("worker_sha256")
+        if not expected_hash:
+            return {
+                "installed": True,
+                "status": "unknown",
+                "message": "清单缺少 worker 校验信息，环境可能不完整，建议重新安装"
+            }
+
+        try:
+            if self._sha256_file(worker_path) != expected_hash:
+                return {
+                    "installed": True,
+                    "status": "sha256_mismatch",
+                    "message": "obscura-worker 已被篡改或损坏，建议重新安装"
+                }
+        except Exception as e:
+            return {
+                "installed": True,
+                "status": "hash_error",
+                "message": f"worker 哈希计算失败: {e}"
+            }
+
+        return {"installed": True, "status": "ok", "message": "正常运行"}
+
     def get_local_status(self) -> Dict[str, Any]:
         """Returns the local installation status including integrity check."""
         executable = self._get_executable_path()
@@ -97,13 +143,19 @@ class ObscuraManager:
                 "message": "文件已被篡改或损坏"
             }
 
+        worker_status = self._get_worker_status(manifest)
+        message = "正常运行"
+        if worker_status["status"] != "ok":
+            message = f"正常运行（{worker_status['message']}）"
+
         return {
             "installed": True,
             "version": manifest.get("version"),
             "status": "ok",
-            "message": "正常运行",
+            "message": message,
             "install_time": manifest.get("install_time"),
-            "platform": manifest.get("platform", "unknown")
+            "platform": manifest.get("platform", "unknown"),
+            "worker": worker_status
         }
 
     async def get_versions(self, limit: int = 5, force: bool = False) -> List[Dict[str, Any]]:
@@ -253,16 +305,7 @@ class ObscuraManager:
                 for item in subfolder.iterdir():
                     shutil.move(str(item), str(self.obscura_dir))
                 subfolder.rmdir()
-                
-            # Remove obscura-worker since it's not needed by this plugin
-            for worker_file in ["obscura-worker", "obscura-worker.exe"]:
-                wf = self.obscura_dir / worker_file
-                if wf.exists() and wf.is_file():
-                    try:
-                        wf.unlink()
-                    except Exception:
-                        pass
-                
+
         except Exception as e:
             if zip_path.exists():
                 zip_path.unlink()
@@ -278,22 +321,26 @@ class ObscuraManager:
         executable = self._get_executable_path()
         if not executable.exists():
             return {"success": False, "message": "解压后未找到核心可执行文件。"}
-            
+
+        worker_executable = self._get_worker_path()
+        worker_sha256 = None
+        if worker_executable.exists():
+            worker_sha256 = self._sha256_file(worker_executable)
+
         if platform.system().lower() != "windows":
             os.chmod(executable, 0o755)
+            if worker_executable.exists():
+                os.chmod(worker_executable, 0o755)
 
         # Calculate Hash
-        sha256_hash = hashlib.sha256()
-        with open(executable, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(byte_block)
-        current_hash = sha256_hash.hexdigest()
+        current_hash = self._sha256_file(executable)
 
         # Write manifest
         manifest = {
             "version": version,
             "install_time": datetime.utcnow().isoformat() + "Z",
             "executable_sha256": current_hash,
+            "worker_sha256": worker_sha256,
             "platform": platform_info
         }
         with open(self.manifest_path, "w", encoding="utf-8") as f:
