@@ -28,6 +28,7 @@ from .search_providers import (
     SearchProvider, 
     DuckDuckGoProvider, 
     BingProvider,
+    BochaProvider,
     AnySearchProvider,
     ExaProvider,
     ParallelProvider,
@@ -502,6 +503,8 @@ class ObscuraSearchService:
     def _get_provider(self) -> SearchProvider:
         if self.config.search_engine == "anysearch_api":
             return AnySearchProvider(self.config)
+        elif self.config.search_engine == "bocha_api":
+            return BochaProvider(self.config)
         elif self.config.search_engine == "exa_api":
             return ExaProvider(self.config)
         elif self.config.search_engine == "parallel_api":

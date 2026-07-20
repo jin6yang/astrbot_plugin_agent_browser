@@ -124,6 +124,7 @@
         "options": [
           "duckduckgo_html",
           "bing_rss",
+          "bocha_api",
           "anysearch_api",
           "exa_api",
           "parallel_api",
