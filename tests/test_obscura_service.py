@@ -25,6 +25,7 @@ from astrbot_plugin_agent_browser.obscura_service import (  # noqa: E402
     resolve_summary_prompt_template,
 )
 from astrbot_plugin_agent_browser.search_providers.duckduckgo import (  # noqa: E402
+    DuckDuckGoProvider,
     decode_duckduckgo_url,
     parse_duckduckgo_results,
 )
@@ -296,6 +297,41 @@ class ObscuraServiceAsyncTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Heading", page.headings)
         self.assertEqual(page.media, [])
+
+
+class DuckDuckGoProviderTemplateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_builtin_template_ignores_custom_config(self):
+        requested: list[str] = []
+
+        async def fetcher(url: str) -> str:
+            requested.append(url)
+            return ""
+
+        config = SearchConfig(
+            search_engine="duckduckgo_html",
+            search_url_template="https://evil.example/{query}",
+        )
+        provider = DuckDuckGoProvider(config, fetcher)
+        await provider.search("test query")
+
+        self.assertEqual(len(requested), 1)
+        self.assertTrue(requested[0].startswith("https://html.duckduckgo.com/html/"), requested[0])
+
+    async def test_explicit_template_is_used(self):
+        requested: list[str] = []
+
+        async def fetcher(url: str) -> str:
+            requested.append(url)
+            return ""
+
+        provider = DuckDuckGoProvider(
+            SearchConfig(search_engine="custom"),
+            fetcher,
+            url_template="https://example.com/s?q={query}",
+        )
+        await provider.search("test query")
+
+        self.assertEqual(requested, ["https://example.com/s?q=test+query"])
 
 
 if __name__ == "__main__":
