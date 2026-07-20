@@ -1,5 +1,5 @@
 name: astrbot_plugin_agent_browser
-display_name: Obscura Agent Browser
+display_name: Obscura Browser Agent
 author: POINTER
 version: 0.1.0
 description: 提供了 Obscura 无头浏览器给 LLM 自由操作，可以让 LLM 看到网站的样式和结构，包括网站中的媒体文件，也可以用作搜索工具，支持多种开箱即用的搜索引擎和自定义搜索 URL, 包括 Bing RSS, DuckDuckGo HTML, AnySearch API, 博查 API, exa API, parallel API, Perplexity API, Tavily API
