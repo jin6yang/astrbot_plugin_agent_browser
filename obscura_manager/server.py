@@ -107,7 +107,7 @@ def setup_routes(app):
 
 def main():
     app = web.Application()
-    
+
     # CORS middleware for development if needed
     async def cors_factory(app, handler):
         async def cors_handler(request):
@@ -120,21 +120,44 @@ def main():
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
             return response
         return cors_handler
-        
+
     app.middlewares.append(cors_factory)
-    
+
     setup_routes(app)
-    
+
     host = '127.0.0.1'
-    port = 8080
+
+    # 端口配置：默认 8080，可用环境变量 OBSCURA_WEBUI_PORT 覆盖。
+    #
+    # 什么时候需要改端口？
+    #   本机 8080 已被其它程序占用（例如 AstrBot 已经在跑一个 WebUI 实例）时，
+    #   开发时可以临时换端口，避免冲突。
+    #
+    # 怎么设置（任选其一）？
+    #   1) 会话级临时设置（推荐，重启终端即失效，不污染系统配置）：
+    #        PowerShell:  $env:OBSCURA_WEBUI_PORT="8081"; python dev.py webui
+    #        CMD:         set OBSCURA_WEBUI_PORT=8081 && python dev.py webui
+    #   2) 系统级长期设置（每台开发机各自独立，设置后需重开终端生效）：
+    #        Windows: SystemPropertiesAdvanced.exe -> 环境变量 -> 新建用户变量
+    #
+    # 注意：前端 vite 开发服务器（pnpm dev）的 /api 代理写死指向 8080。
+    #   如果使用非默认端口做前端联调，需要同步修改
+    #   web_ui/src/WebUI/vite.config.ts 中 server.proxy 的 target。
+    #   生产模式（构建后的 dist 由本服务托管）不经过 vite，改端口无影响。
+    try:
+        port = int(os.environ.get("OBSCURA_WEBUI_PORT", "8080"))
+    except ValueError:
+        # 环境变量写成了非数字时，静默回退到默认端口，避免启动直接崩溃。
+        port = 8080
+
     print(f"=========================================")
     print(f"Obscura Web UI 启动在 http://{host}:{port}")
     print(f"请不要关闭此窗口。关闭窗口即停止 Web UI。")
     print(f"=========================================")
-    
+
     # Open browser automatically
     webbrowser.open(f"http://{host}:{port}")
-    
+
     web.run_app(app, host=host, port=port, print=None)
 
 if __name__ == "__main__":
