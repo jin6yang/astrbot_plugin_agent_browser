@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 
 GITHUB_REPO = "h4ckf0r0day/obscura"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
-GH_PROXY_URL = "https://ghproxy.net/"
+GH_PROXY_URLS = [
+    "https://ghfast.top/",
+    "https://ghproxy.net/",
+]
 
 class ObscuraManager:
     _versions_cache = []
@@ -173,7 +176,7 @@ class ObscuraManager:
         if not force and ObscuraManager._versions_cache and (now - ObscuraManager._versions_cache_time) < 43200:
             return ObscuraManager._versions_cache[:limit]
             
-        async with aiohttp.ClientSession() as session:
+        async with aiohttp.ClientSession(trust_env=True) as session:
             try:
                 async with session.get(GITHUB_API_URL, timeout=10) as resp:
                     resp.raise_for_status()
@@ -252,39 +255,52 @@ class ObscuraManager:
         if not matched_asset:
             return {"success": False, "message": f"在版本 {version} 中找不到适合当前系统的发布包。"}
 
-        download_url = matched_asset.get("browser_download_url")
+        direct_url = matched_asset.get("browser_download_url")
         asset_name = matched_asset.get("name", "")
         # Remove "obscura-" and ".zip" to get the platform string (e.g. windows-amd64)
         platform_info = asset_name.replace("obscura-", "").replace(".zip", "")
 
         if use_proxy:
-            download_url = f"{GH_PROXY_URL}{download_url}"
+            candidate_urls = [f"{mirror}{direct_url}" for mirror in GH_PROXY_URLS] + [direct_url]
+        else:
+            candidate_urls = [direct_url]
 
         # Setup paths
         zip_path = self.base_dir / "obscura_temp.zip"
-        
-        if progress_callback:
-            progress_callback("正在下载...", 10)
+        download_timeout = aiohttp.ClientTimeout(total=300, connect=20, sock_read=60)
 
-        # Download
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get(download_url, timeout=300) as resp:
-                    resp.raise_for_status()
-                    total_size = int(resp.headers.get('content-length', 0))
-                    downloaded = 0
-                    
-                    with open(zip_path, 'wb') as f:
-                        async for chunk in resp.content.iter_chunked(8192):
-                            f.write(chunk)
-                            downloaded += len(chunk)
-                            if progress_callback and total_size > 0:
-                                percent = 10 + int((downloaded / total_size) * 60)
-                                progress_callback(f"下载中... {downloaded//1024}KB / {total_size//1024}KB", percent)
-            except Exception as e:
-                if zip_path.exists():
-                    zip_path.unlink()
-                return {"success": False, "message": f"下载失败: {e}"}
+        # Download, with mirror fallback
+        downloaded = False
+        last_error: Optional[Exception] = None
+        async with aiohttp.ClientSession(trust_env=True) as session:
+            for index, candidate_url in enumerate(candidate_urls):
+                if progress_callback:
+                    if index == 0:
+                        progress_callback("正在下载...", 10)
+                    else:
+                        progress_callback(f"正在尝试备用下载源（{index + 1}/{len(candidate_urls)}）...", 10)
+                try:
+                    async with session.get(candidate_url, timeout=download_timeout) as resp:
+                        resp.raise_for_status()
+                        total_size = int(resp.headers.get('content-length', 0))
+                        received = 0
+
+                        with open(zip_path, 'wb') as f:
+                            async for chunk in resp.content.iter_chunked(8192):
+                                f.write(chunk)
+                                received += len(chunk)
+                                if progress_callback and total_size > 0:
+                                    percent = 10 + int((received / total_size) * 60)
+                                    progress_callback(f"下载中... {received//1024}KB / {total_size//1024}KB", percent)
+                        downloaded = True
+                        break
+                except Exception as e:
+                    last_error = e
+                    if zip_path.exists():
+                        zip_path.unlink()
+
+        if not downloaded:
+            return {"success": False, "message": f"下载失败: {last_error}"}
 
         if progress_callback:
             progress_callback("正在清理旧版本...", 75)
