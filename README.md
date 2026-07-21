@@ -24,6 +24,7 @@ Astrbot 插件 - Obscura 浏览器代理
 
 
 <div align="center">
+
 [中文 README](README.md) | [English README](README_en.md)
 </div>
 
