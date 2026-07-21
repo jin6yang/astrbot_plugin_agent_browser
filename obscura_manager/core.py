@@ -16,8 +16,9 @@ logger = logging.getLogger(__name__)
 GITHUB_REPO = "h4ckf0r0day/obscura"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
 GH_PROXY_URLS = [
+    "https://gh-proxy.com/",
+    "https://gh.dpik.top/",
     "https://ghfast.top/",
-    "https://ghproxy.net/",
 ]
 
 class ObscuraManager:
