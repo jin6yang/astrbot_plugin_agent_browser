@@ -62,7 +62,7 @@ export default function SettingsDialog({
                 <div>
                   <p className="font-semibold">GitHub 下载加速</p>
                   <p className="text-xs text-default-500">
-                    使用 ghproxy.net 加速下载
+                    默认首选使用 gh-proxy.com 加速下载
                   </p>
                 </div>
                 <Switch isSelected={useProxy} onChange={setUseProxy}>
@@ -76,7 +76,7 @@ export default function SettingsDialog({
                 <div>
                   <p className="font-semibold">自动检查更新</p>
                   <p className="text-xs text-default-500">
-                    每天 12:00 与 24:00 自动在后台获取云端版本
+                    每天 12:00 与 24:00, 如果插件在运行，则会自动在后台检查版本更新
                   </p>
                 </div>
                 <Switch isSelected={true} isDisabled={true}>
