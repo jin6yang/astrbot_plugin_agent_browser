@@ -1,9 +1,8 @@
 <div align=center>
   <img src="logo.png" alt="" width="128">
 </div>
-
 <h2 align="center">
-Obscura Agent Browser
+Obscura Browser Agent
 </h2>
 <h2 align="center">
 Astrbot Plugin
@@ -13,8 +12,9 @@ Astrbot 插件 - Obscura 浏览器代理
 </h2>
 
 
+
 <div align="center">
-💖 一款为 AstrBot 提供浏览器的插件，允许大模型自由操作、搜索和浏览网页 😎
+💖 一款为 AstrBot 框架中的 Bot 提供无头浏览器的插件，允许大模型自由操作、搜索和浏览网页 😎
 </div>
 <div align="center">
 ⚡ Powered By Obscura 🚀
@@ -24,18 +24,18 @@ Astrbot 插件 - Obscura 浏览器代理
 </div>
 
 
-<div align="center">
 
+<div align="center">
 [中文 README](README.md) | [English README](README_en.md)
 
 </div>
 
 > [!NOTE]
-> 本插件正在开发中......
+> 本插件为自用插件
 >
-> 本插件暂未上架 AstrBot 插件市场
+> 本插件即将上架 AstrBot 插件市场
 >
-> 本插件因为还在开发中，所以版本号可能会保持不变
+> 本插件项目因为以上原因，可能无法及时响应和解决 Issues 和 PR
 
 ## 主要功能和特色
 
@@ -66,7 +66,9 @@ Astrbot 插件 - Obscura 浏览器代理
 本插件内置了对多种开箱即用的搜索引擎，可以在配置页面轻松切换：
 
 - **DuckDuckGo HTML**（免费）【默认】
+- **Bing RSS**（免费）
 - **AnySearch API**（免费）
+- **博查 API**
 - **exa API**（免费）
 - **parallel API**
 - **Perplexity API**
@@ -158,6 +160,8 @@ Windows: `%USERPROFILE%\.astrbot\data\plugins\astrbot_plugin_agent_browser`
 Linux / macOS / OpenHarmony: 请根据 AstrBot 部署方式查找对应的目录
 
 ## Q/A
+
+如果碰到一些奇怪的 Bug, 建议先重启 AstrBot 的后端。
 
 如果本插件的 WebUI 无法正常与后端通信，一般重启 AstrBot 的后端就可以解决。
 
