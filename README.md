@@ -12,7 +12,6 @@ Astrbot 插件 - Obscura 浏览器代理
 </h2>
 
 
-
 <div align="center">
 💖 一款为 AstrBot 框架中的 Bot 提供无头浏览器的插件，允许大模型自由操作、搜索和浏览网页 😎
 </div>
@@ -24,11 +23,10 @@ Astrbot 插件 - Obscura 浏览器代理
 </div>
 
 
-
 <div align="center">
 [中文 README](README.md) | [English README](README_en.md)
-
 </div>
+
 
 > [!NOTE]
 > 本插件为自用插件
